@@ -95,6 +95,15 @@ try:
     wickedbridge.subscribe('sex.tick', on_sex_tick, interval=100)
     for _name in wickedbridge.GATES:
         wickedbridge.gate(_name, _observer(_name))
+
+    # A worked exhibitionism example, showing why nothing here is negative.
+    # This Sim stops minding being seen (scaler 0 on `exposed`, whose polarity
+    # is already -1) and gains from being seen instead (a positive amount on
+    # `exhibitionism`, polarity +1). Another mod can raise `exposed` for its
+    # own reasons and the two compose -- neither can flip the other's meaning,
+    # because sign lives in the key and not in what we pass.
+    wickedbridge.scale('satisfaction', lambda sim, inst, target: {'exposed': 0.0})
+    wickedbridge.modify('satisfaction', lambda sim, inst, target: {'exhibitionism': 4})
     _write('HelloWickedBridge subscribed (bridge %s), observing gates: %s'
            % (wickedbridge.VERSION, ', '.join(wickedbridge.GATES)))
 except Exception as ex:

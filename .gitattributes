@@ -1,0 +1,7 @@
+* text=auto eol=lf
+
+# Built archives and bytecode are binary -- line-ending translation corrupts
+# them, and a corrupt .ts4script fails silently rather than raising.
+*.ts4script binary
+*.package   binary
+*.pyc       binary

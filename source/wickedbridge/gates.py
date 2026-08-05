@@ -13,14 +13,19 @@ lands on WickedWhims' bug tracker instead of the mod that caused it.
 from . import compat, events
 
 # gate event -> (compat key, human description)
+# event, compat key, cadence, description.
+#
+# Cadence is measured, not guessed -- one live session of two acts gave
+# sex.allow_sim 2586 calls and birthcontrol.condom 46. Keep callbacks on a HOT
+# gate cheap: no relationship walks, no tuning lookups.
 GATES = (
-    ('sex.allow_sim',        'is_sim_allowed_for_sex',
+    ('sex.allow_sim',       'is_sim_allowed_for_sex',       'HOT ~1/tick/Sim',
      'may this Sim take part in sex at all'),
-    ('sex.appropriate',      'is_sim_sex_appropriate',
+    ('sex.appropriate',     'is_sim_sex_appropriate',       'HOT ~1/tick/Sim',
      'is sex contextually appropriate for this Sim'),
-    ('birthcontrol.condom',  'is_condom_applicable_for_sim',
+    ('birthcontrol.condom', 'is_condom_applicable_for_sim', 'per act',
      'may this Sim use a condom'),
-    ('birthcontrol.pill',    'is_birth_control_pill_applicable_for_sim',
+    ('birthcontrol.pill',   'is_birth_control_pill_applicable_for_sim', 'per act',
      'may this Sim use birth control pills'),
 )
 
@@ -41,7 +46,9 @@ def _describe(callback):
 
 def _run_gate(event, args):
     """True if a subscriber denied. Records who, for attribution."""
-    subs = events.subscribers(event)
+    # Live list, not a copy: these run per tick per Sim and allocating on every
+    # call is measurable at that rate. Subscribers are not removed mid-dispatch.
+    subs = events.raw_subscribers(event)
     if not subs:
         return False
     for sub in subs:
@@ -61,7 +68,7 @@ def _run_gate(event, args):
 
 def install():
     """Wrap each WickedWhims predicate we gate. Idempotent."""
-    for event, key, _description in GATES:
+    for event, key, _cadence, _description in GATES:
         if event in _installed:
             continue
         original = compat.get(key)
@@ -86,10 +93,10 @@ def install():
 
 def report_lines():
     lines = ['gates installed: %d/%d' % (len(_installed), len(GATES))]
-    for event, key, description in GATES:
+    for event, key, cadence, description in GATES:
         state = 'on' if event in _installed else 'OFF'
-        lines.append('   %-24s %-4s vetoes=%d  (%s)'
-                     % (event, state, _vetoes.get(event, 0), description))
+        lines.append('   %-22s %-4s %-17s vetoes=%d  (%s)'
+                     % (event, state, cadence, _vetoes.get(event, 0), description))
     if _last_veto[0]:
         lines.append('   last veto: %s' % _last_veto[0])
     return lines

@@ -26,7 +26,8 @@ and again at zone load, because a script mod that fails to load is otherwise
 completely silent.
 """
 
-from . import bootstrap, compat, events, gates, sex
+from . import (bootstrap, compat, events, gates, satisfaction,
+               satisfaction_model, settings, sex)
 
 VERSION = bootstrap.VERSION
 
@@ -43,7 +44,50 @@ def gate(event, callback, priority=0):
     return events.subscribe(event, callback, priority=priority)
 
 
-GATES = tuple(g[0] for g in gates.GATES)
+def resolve(event, callback, priority=0):
+    """Substitute a value WickedWhims would otherwise compute.
+
+    Return a replacement, or None to abstain. Highest priority first, first
+    definite answer wins. Reserved for CAS-part and outfit resolution.
+    """
+    return events.subscribe(event, callback, priority=priority)
+
+
+def modify(event, callback, priority=0):
+    """Contribute amounts, keyed by reason.
+
+        wickedbridge.modify('satisfaction',
+                            lambda sim, inst, target: {'exhibitionism': 5,
+                                                       'exposed': 3})
+
+    Amounts are MAGNITUDES and must not be negative. Whether a key adds to or
+    subtracts from satisfaction is fixed by the key itself -- `exposed` always
+    subtracts, `exhibitionism` always adds -- so no mod can invert what another
+    mod's key means. Amounts are summed per key.
+    """
+    return events.subscribe(event + '#modify', callback, priority=priority)
+
+
+def scale(event, callback, priority=0):
+    """Contribute sensitivities, keyed by reason.
+
+        wickedbridge.scale('satisfaction',
+                           lambda sim, inst, target: {'exposed': 0.0})
+
+    A scaler says how much this Sim CARES about a reason, never whether the
+    reason is good; negatives are rejected. Scalers are averaged per key and
+    applied after modifiers are summed, so 0 mutes a key rather than deleting
+    it -- that is how an exhibitionist stops minding being seen while still
+    earning from `exhibitionism`.
+    """
+    return events.subscribe(event + '#scale', callback, priority=priority)
+
+
+# The satisfaction keys mods may contribute to, and how to add more.
+satisfaction_keys = satisfaction_model.keys
+register_satisfaction_key = satisfaction_model.register_key
+
+GATES = tuple(g[0] for g in gates.GATES) + (satisfaction.EV_ALLOWED,)
 
 # --- queries --------------------------------------------------------------
 active = sex.active
@@ -59,6 +103,17 @@ EVENTS = (
     sex.EV_TICK,        # (handle)            once per game tick per active act
     sex.EV_ANIMATION,   # (handle, previous)  the act swapped animation
     sex.EV_STOP,        # (handle)            the act ended
+    sex.EV_AFTER_STOP,  # (handle)            a timer, N ticks after stop
+    satisfaction.EV_COMPUTED,   # (instance)  WickedWhims finished its
+                                #             post-sex satisfaction pass
+)
+
+# Resolvers -- return a replacement, or None to abstain. The last argument is
+# always WickedWhims' own value, so a subscriber can scale rather than replace.
+RESOLVERS = (
+    satisfaction.EV_LEVEL,       # (sim, instance, target, ww_level)
+    satisfaction.EV_PAIR_LEVEL,  # (sim, target, instance, ww_level)
+    satisfaction.EV_BUFF,        # (sim, instance, is_positive, ww_buff)
 )
 
 bootstrap.start()

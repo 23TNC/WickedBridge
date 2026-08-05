@@ -124,6 +124,35 @@ pills_mod.is_birth_control_pill_applicable_for_sim = lambda sim: True
 gate_importer = make_module('wickedwhims.fake_gate_caller')
 gate_importer.is_sim_allowed_for_sex = sims_mod.is_sim_allowed_for_sex
 
+GAME_UPDATE = []
+ticksvc_mod = make_module('wickedwhims.main.game_handlers.tick_handler')
+def register_on_game_update_method(unique_id=None, interval=None):
+    def _wrap(fn):
+        GAME_UPDATE.append(fn); return fn
+    return _wrap
+ticksvc_mod.register_on_game_update_method = register_on_game_update_method
+
+setsex_mod = make_module('wickedwhims.sex.sex_settings')
+setsex_mod.SexSetting = type('SexSetting', (), {'CUM_SWITCH_STATE': 'k1'})
+setsex_mod.get_sex_setting = lambda member: 'ON' if member == 'k1' else None
+
+SATIS = ('wickedwhims.sex.integral.sex_handlers.active_sex.sex_actions'
+         '.actions.satisfaction.satisfaction_levels')
+STYPES = ('wickedwhims.sex.integral.sex_handlers.active_sex.sex_actions'
+          '.actions.satisfaction.satisfaction_types')
+satis_mod = make_module(SATIS)
+satis_mod.run_post_sex_satisfaction = lambda instance: 'done'
+satis_mod.get_sex_satisfaction_level = lambda sim, instance, target: 10
+satis_mod.get_sims_sex_satisfaction_level = lambda sim, target, instance: 20
+satis_mod._is_allowed_sex_satisfaction = lambda instance: True
+stypes_mod = make_module(STYPES)
+stypes_mod.get_sex_satisfaction_buff = lambda sim, instance, is_positive: 'ww_caught_buff'
+# component functions: 4 + 3 + 2 + 1 = 10, matching get_sex_satisfaction_level
+satis_mod._get_sim_base_sex_satisfaction_value = lambda sim, inst, target: 4
+satis_mod._get_sim_dynamic_sex_satisfaction_value = lambda sim, inst: 3
+satis_mod._get_targets_base_sex_satisfaction_value = lambda sim, inst, target: 2
+satis_mod._get_targets_dynamic_sex_satisfaction_value = lambda sim, inst, target: 1
+
 zone_mod = make_module('turbolib2.events.zone_spin')
 
 
@@ -148,7 +177,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.3.0')
+check('module imports', wickedbridge.VERSION == '0.6.1')
 check('used turbolib2 zone registration, not the fallback',
       len(ZONE_CALLBACKS) == 1, 'fell back to zone.Zone')
 
@@ -332,6 +361,176 @@ def explode(sim):
 wickedbridge.gate('birthcontrol.pill', explode)
 check('a throwing gate falls through to WickedWhims, never raises',
       pills_mod.is_birth_control_pill_applicable_for_sim('sim') is True)
+
+print('--- 0.4.0 additions ---')
+check('after_stop driven by game update, not the tick chain', len(GAME_UPDATE) == 1)
+posted = []
+wickedbridge.subscribe('sex.after_stop', lambda h: posted.append(h.id))
+fourth = FakeSexInstance(ssid=3003, actors=['x'])
+handlers_mod.register_active_sex_instance(fourth)
+handlers_mod.unregister_active_sex_instance(fourth)
+check('after_stop not fired immediately on stop', len(posted) == 0)
+for _ in range(sex.AFTER_STOP_DELAY_TICKS):
+    GAME_UPDATE[0](1)
+check('after_stop fires after the delay', len(posted) == 1)
+
+check('cumulative act counter survives handle release', sex._counts['acts'] >= 4,
+      'got %d' % sex._counts['acts'])
+
+class Cancellable(FakeSexInstance):
+    def __init__(self, *a, **k):
+        FakeSexInstance.__init__(self, *a, **k); self.cancelled = None
+    def cancel(self, reason=None): self.cancelled = reason
+c = Cancellable(ssid=4004, actors=['y'])
+check('handle.cancel reaches the instance',
+      sex._handle_for(c).cancel('testing') and c.cancelled == 'testing')
+
+from wickedbridge import settings as _s
+check('settings read by name without importing WW enums',
+      _s.sex('CUM_SWITCH_STATE') == 'ON')
+check('unknown setting returns the default, never raises',
+      _s.sex('NO_SUCH_SETTING', 'fallback') == 'fallback')
+check('settings.names lists available members',
+      'CUM_SWITCH_STATE' in _s.names('sex'))
+
+check('gates use the live subscriber list (no per-call copy)',
+      events.raw_subscribers('sex.allow_sim') is not None)
+
+print('--- satisfaction ---')
+from wickedbridge import satisfaction as _sat
+check('all 5 satisfaction hooks installed', len(_sat._installed) == 5, str(_sat._installed))
+
+computed = []
+wickedbridge.subscribe('satisfaction.computed', lambda inst: computed.append(inst))
+satis_mod.run_post_sex_satisfaction('inst')
+check('satisfaction.computed fires on the post-sex pass', len(computed) == 1)
+
+check('level passes through untouched with no resolver',
+      satis_mod.get_sex_satisfaction_level('sim', 'inst', 'target') == 10)
+
+# scale rather than replace -- WickedWhims' own value is the last argument
+wickedbridge.resolve('satisfaction.level',
+                     lambda sim, inst, target, ww: ww * 0.5 if sim == 'loose' else None)
+check('resolver scales WickedWhims value for the targeted Sim',
+      satis_mod.get_sex_satisfaction_level('loose', 'inst', 'target') == 5.0)
+check('abstaining resolver leaves WickedWhims value intact',
+      satis_mod.get_sex_satisfaction_level('other', 'inst', 'target') == 10)
+
+# the Exhibitionist pattern: swap which buff is applied
+wickedbridge.resolve('satisfaction.buff',
+                     lambda sim, inst, pos, ww: 'flirty_buff' if sim == 'shameless' else None)
+check('resolver substitutes the satisfaction buff',
+      stypes_mod.get_sex_satisfaction_buff('shameless', 'inst', True) == 'flirty_buff')
+check('other Sims keep WickedWhims buff',
+      stypes_mod.get_sex_satisfaction_buff('normal', 'inst', True) == 'ww_caught_buff')
+
+def bad_resolver(sim, inst, target, ww):
+    raise RuntimeError('resolver bug')
+wickedbridge.resolve('satisfaction.pair_level', bad_resolver)
+check('a throwing resolver falls back to WickedWhims value',
+      satis_mod.get_sims_sex_satisfaction_level('a', 'b', 'inst') == 20)
+
+wickedbridge.gate('satisfaction.allowed', lambda inst: False)
+check('satisfaction can be gated off entirely',
+      satis_mod._is_allowed_sex_satisfaction('inst') is False)
+
+print('--- keyed satisfaction model ---')
+from wickedbridge import satisfaction_model as _sm, compat
+check('default keys registered', set(_sm.keys()) >=
+      {'mood_motives_traits', 'exposed', 'exhibitionism', 'partner', 'lube'},
+      str(sorted(_sm.keys())))
+
+seeded = _sm.seed('sim', 'inst', 'target')
+check('seeded from WickedWhims own component functions',
+      seeded == {'mood_motives_traits': 4, 'exhibitionism': 3, 'partner': 2, 'lube': 1},
+      str(seeded))
+check('every seeded value is a magnitude, never signed',
+      all(v >= 0 for v in seeded.values()), str(seeded))
+total, _b = _sm.compute('sim', 'inst', 'target')
+check('model recombines to WickedWhims total with no mods', total == 10, 'got %s' % total)
+
+# --- polarity: sign belongs to the key, not to anything a mod passes in -----
+check('exposed and exhibitionism are separate keys with opposite polarity',
+      _sm.keys()['exposed']['polarity'] == -1 and
+      _sm.keys()['exhibitionism']['polarity'] == 1)
+check('a negative WW seed routes to the opposite key of the pair',
+      _sm.keys()['exhibitionism']['seed_negative_to'] == 'exposed')
+
+satis_mod._get_sim_dynamic_sex_satisfaction_value = lambda sim, inst: -3
+compat.scan(force=True)
+seeded = _sm.seed('sim', 'inst', 'target')
+check('a disapproved-of Sim seeds exposed, not a negative exhibitionism',
+      seeded.get('exposed') == 3 and 'exhibitionism' not in seeded, str(seeded))
+neg_total, _b = _sm.compute('sim', 'inst', 'target')
+check('routed seed still reproduces WickedWhims total (4 - 3 + 2 + 1)',
+      neg_total == 4, 'got %s' % neg_total)
+satis_mod._get_sim_dynamic_sex_satisfaction_value = lambda sim, inst: 3
+compat.scan(force=True)
+
+# Both mods contribute POSITIVE 3, as the design requires; the keys decide
+# which way each one pulls.
+wickedbridge.modify('satisfaction', lambda s_, i_, t_: {'exposed': 3})
+wickedbridge.modify('satisfaction', lambda s_, i_, t_: {'exhibitionism': 3})
+total, b = _sm.compute('sim', 'inst', 'target')
+check('a positive contribution to a negative key subtracts',
+      b['exposed'][0] == 3 and b['exposed'][2] == -3, str(b['exposed']))
+check('a positive contribution to a positive key adds',
+      b['exhibitionism'][2] > 0, str(b['exhibitionism']))
+
+before = dict(_sm._rejected)
+wickedbridge.modify('satisfaction', lambda s_, i_, t_: {'exposed': -5})
+total, b = _sm.compute('sim', 'inst', 'target')
+check('negative modifiers are rejected, not applied',
+      _sm._rejected.get('negative_modifier', 0) > before.get('negative_modifier', 0)
+      and b['exposed'][0] == 3, str(b['exposed']))
+
+# The exhibitionist shape the user described: mute the cost with a 0 scaler,
+# earn from your own key. No sign flip anywhere.
+wickedbridge.scale('satisfaction', lambda s_, i_, t_: {'exposed': 0.0})
+total, b = _sm.compute('sim', 'inst', 'target')
+check('a 0 scaler mutes the cost rather than inverting it',
+      b['exposed'][2] == 0.0 and b['exhibitionism'][2] > 0, str(b['exposed']))
+
+wickedbridge.modify('satisfaction', lambda s_, i_, t_: {'watched': 5})  # unknown key on purpose
+wickedbridge.modify('satisfaction', lambda s_, i_, t_: {'watched': 2, 'partner': 1})
+total, b = _sm.compute('sim', 'inst', 'target')
+check('modifiers sum per key across mods (5 + 2)', b['watched'][0] == 7, str(b['watched']))
+check('seeded key sums WW seed plus contributions',
+      b['partner'][0] == 3, 'seed 2 + mod 1 = %s' % (b['partner'][0],))
+
+wickedbridge.scale('satisfaction', lambda s_, i_, t_: {'watched': 0.0})
+total, b = _sm.compute('sim', 'inst', 'target')
+check('a lone 0 scaler zeroes the key when nobody disagrees',
+      b['watched'][1] == 0.0, 'got %s' % (b['watched'][1],))
+wickedbridge.scale('satisfaction', lambda s_, i_, t_: {'watched': 1.0})
+total, b = _sm.compute('sim', 'inst', 'target')
+check('0 MUTES rather than annihilates once another mod disagrees',
+      abs(b['watched'][1] - 0.5) < 1e-9, 'got %s' % (b['watched'][1],))
+
+before = dict(_sm._rejected)
+wickedbridge.scale('satisfaction', lambda s_, i_, t_: {'watched': -2.0})
+_sm.compute('sim', 'inst', 'target')
+check('negative scalers are rejected -- sign belongs to the key',
+      _sm._rejected.get('negative_scaler', 0) > before.get('negative_scaler', 0))
+wickedbridge.scale('satisfaction', lambda s_, i_, t_: {'watched': 999.0})
+_sm.compute('sim', 'inst', 'target')
+check('absurd scalers are clamped, not honoured', _sm._rejected.get('clamped', 0) > 0)
+
+wickedbridge.modify('satisfaction', lambda s_, i_, t_: {'typo_key': 99})
+_sm.compute('sim', 'inst', 'target')
+check('unknown keys are recorded, not silently inert', 'typo_key' in _sm.unknown_keys())
+
+def bad(s_, i_, t_):
+    raise RuntimeError('contributor bug')
+wickedbridge.modify('satisfaction', bad)
+t2, _ = _sm.compute('sim', 'inst', 'target')
+check('a throwing contributor does not break the model', isinstance(t2, (int, float)))
+
+from wickedbridge import satisfaction as _sat
+check('model is observe-only in this build', _sat.MODEL_REPLACES_WW is False)
+satis_mod.get_sex_satisfaction_level('sim', 'inst', 'target')
+check('WickedWhims value still returned while observing',
+      _sat.model_stats()['samples'] >= 1)
 
 print()
 print('%d passed, %d failed' % (len(PASS), len(FAIL)))

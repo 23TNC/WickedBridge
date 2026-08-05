@@ -69,6 +69,11 @@ def subscribers(event):
     return list(_subs.get(event, ()))
 
 
+def raw_subscribers(event):
+    """The live list itself -- no copy. Hot paths only; do not mutate."""
+    return _subs.get(event)
+
+
 def record_error(sub):
     _record_error(sub)
 

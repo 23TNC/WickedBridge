@@ -22,10 +22,15 @@ M_INSTANCE = ('wickedwhims.sex.integral.sex_handlers.active_sex'
               '.active_sex_instance')
 M_STATES = 'wickedwhims.sex.integral.sex_handlers.sex_instance_states'
 M_ZONE = 'turbolib2.events.zone_spin'
+M_TICKSVC = 'wickedwhims.main.game_handlers.tick_handler'
 M_LOGGER = 'wickedwhims.debug.logger'
 M_SIMS = 'wickedwhims.sex.generic.utils.sims'
 M_CONDOMS = 'wickedwhims.sex.pregnancy.birth_control.condoms'
 M_PILLS = 'wickedwhims.sex.pregnancy.birth_control.pills'
+M_SATIS = ('wickedwhims.sex.integral.sex_handlers.active_sex.sex_actions'
+           '.actions.satisfaction.satisfaction_levels')
+M_SATIS_TYPES = ('wickedwhims.sex.integral.sex_handlers.active_sex.sex_actions'
+                 '.actions.satisfaction.satisfaction_types')
 
 # What we look up, and why. Order matters only for reporting.
 #   key            module      attribute                required?
@@ -38,12 +43,30 @@ REQUIRED = (
     ('unregister_instance',      M_HANDLERS, 'unregister_active_sex_instance', False),
     ('SexInstanceStateType',     M_STATES,   'SexInstanceStateType',     False),
     ('register_zone_load',       M_ZONE,     'register_zone_load_event_method', False),
+    ('register_game_update',     M_TICKSVC,  'register_on_game_update_method',  False),
     # gated predicates -- optional, each missing one just disables its gate
     ('is_sim_allowed_for_sex',   M_SIMS,     'is_sim_allowed_for_sex',   False),
     ('is_sim_sex_appropriate',   M_SIMS,     'is_sim_sex_appropriate',   False),
     ('is_condom_applicable_for_sim', M_CONDOMS, 'is_condom_applicable_for_sim', False),
     ('is_birth_control_pill_applicable_for_sim', M_PILLS,
      'is_birth_control_pill_applicable_for_sim', False),
+    # satisfaction pipeline -- WickedWhims computes this in one pass on stop
+    ('run_post_sex_satisfaction',   M_SATIS, 'run_post_sex_satisfaction',   False),
+    ('get_sex_satisfaction_level',  M_SATIS, 'get_sex_satisfaction_level',  False),
+    ('get_sims_sex_satisfaction_level', M_SATIS,
+     'get_sims_sex_satisfaction_level', False),
+    ('_is_allowed_sex_satisfaction', M_SATIS, '_is_allowed_sex_satisfaction', False),
+    ('get_sex_satisfaction_buff', M_SATIS_TYPES, 'get_sex_satisfaction_buff', False),
+    # component functions the keyed model seeds from -- calling these rather
+    # than reimplementing WickedWhims' maths is what avoids double counting
+    ('_get_sim_base_sex_satisfaction_value', M_SATIS,
+     '_get_sim_base_sex_satisfaction_value', False),
+    ('_get_sim_dynamic_sex_satisfaction_value', M_SATIS,
+     '_get_sim_dynamic_sex_satisfaction_value', False),
+    ('_get_targets_base_sex_satisfaction_value', M_SATIS,
+     '_get_targets_base_sex_satisfaction_value', False),
+    ('_get_targets_dynamic_sex_satisfaction_value', M_SATIS,
+     '_get_targets_dynamic_sex_satisfaction_value', False),
 )
 
 

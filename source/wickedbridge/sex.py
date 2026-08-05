@@ -25,6 +25,9 @@ EV_TICK = 'sex.tick'
 EV_START = 'sex.start'
 EV_STOP = 'sex.stop'
 EV_ANIMATION = 'sex.animation_change'
+# A timer, N ticks after stop. NOT WickedWhims' post-sex processing --
+# that is satisfaction.computed, in satisfaction.py.
+EV_AFTER_STOP = 'sex.after_stop'
 
 _installed = False
 _lifecycle_installed = False
@@ -32,7 +35,9 @@ _tick_count = 0
 _handler_errors = 0
 _seen = {}          # (id(instance), ssid) -> _SexHandle
 _next_handle = [1]
-_counts = {'start': 0, 'stop': 0, 'animation': 0}
+_counts = {'start': 0, 'stop': 0, 'animation': 0, 'acts': 0, 'after_stop': 0}
+AFTER_STOP_DELAY_TICKS = 30
+_pending_after = []          # [[handle, ticks_remaining], ...]
 _last = {'animation_id': None}
 
 
@@ -123,6 +128,26 @@ class _SexHandle(object):
                 continue
         return []
 
+    def cancel(self, reason='WickedBridge'):
+        """Ask WickedWhims to end this act. True if a call was accepted."""
+        for name, kwargs in (('cancel', {'reason': reason}),
+                             ('stop', {'hard_stop': True, 'stop_reason': reason})):
+            method = getattr(self._instance, name, None)
+            if not callable(method):
+                continue
+            try:
+                method(**kwargs)
+                return True
+            except TypeError:
+                try:
+                    method()
+                    return True
+                except Exception:
+                    continue
+            except Exception:
+                continue
+        return False
+
     def raw(self):
         """The underlying WickedWhims instance, for callers that need more than
         the bridge exposes. Using this reintroduces the coupling the bridge
@@ -150,6 +175,7 @@ def _handle_for(instance):
     if handle is None:
         handle = _SexHandle(_next_handle[0], ssid, instance)
         _next_handle[0] += 1
+        _counts['acts'] += 1
         _seen[key] = handle
     return handle
 
@@ -229,10 +255,46 @@ def _on_unregister(instance):
     handle.running = False
     _counts['stop'] += 1
     events.notify(EV_STOP, handle)
+    if events.has_subscribers(EV_AFTER_STOP):
+        _pending_after.append([handle, AFTER_STOP_DELAY_TICKS])
     # Release the handle now the act is over; without this _seen grows for the
     # whole session.
     _seen.pop((id(instance), _ssid_of(instance)), None)
     _refresh_status()
+
+
+def _drain_pending_after(ticks=1, *args, **kwargs):
+    """Fire sex.post_sex once its delay elapses.
+
+    Driven by the game update, not the tick chain: no handler ticks for an act
+    once it has ended, so a tick-driven delay could never fire for the last
+    running act.
+    """
+    if not _pending_after:
+        return
+    step = ticks if isinstance(ticks, int) else 1
+    for entry in list(_pending_after):
+        entry[1] -= step
+        if entry[1] > 0:
+            continue
+        _pending_after.remove(entry)
+        _counts['after_stop'] += 1
+        events.notify(EV_AFTER_STOP, entry[0])
+
+
+def install_after_stop():
+    """Drive the post-sex delay off WickedWhims' game update."""
+    register = compat.get('register_game_update')
+    if register is None:
+        return False
+    for attempt in (lambda: register(unique_id='wickedbridge_after_stop')(_drain_pending_after),
+                    lambda: register(_drain_pending_after)):
+        try:
+            attempt()
+            return True
+        except Exception:
+            continue
+    return False
 
 
 def _refresh_status():
@@ -329,9 +391,10 @@ def report_lines():
             % (compat.binding_count('register_instance'),
                compat.binding_count('unregister_instance')),
             'last animation id seen: %r' % (_last['animation_id'],),
-            'acts started: %d  stopped: %d  animation changes: %d'
-            % (_counts['start'], _counts['stop'], _counts['animation']),
+            'acts started: %d  stopped: %d  animation changes: %d  after_stop: %d'
+            % (_counts['start'], _counts['stop'], _counts['animation'], _counts['after_stop']),
             'ticks observed: %d' % _tick_count,
             'handler errors: %d' % _handler_errors,
-            'acts seen this session: %d' % len(_seen),
+            'acts seen this session: %d  (live handles: %d, awaiting after_stop: %d)'
+            % (_counts['acts'], len(_seen), len(_pending_after)),
             'acts running now: %d' % len(active())]
