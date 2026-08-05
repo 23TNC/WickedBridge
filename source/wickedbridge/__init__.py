@@ -26,7 +26,7 @@ and again at zone load, because a script mod that fails to load is otherwise
 completely silent.
 """
 
-from . import (bootstrap, compat, events, gates, satisfaction,
+from . import (bootstrap, compat, events, gates, roles, satisfaction,
                satisfaction_model, settings, sex)
 
 VERSION = bootstrap.VERSION
@@ -111,6 +111,7 @@ EVENTS = (
 # Resolvers -- return a replacement, or None to abstain. The last argument is
 # always WickedWhims' own value, so a subscriber can scale rather than replace.
 RESOLVERS = (
+    roles.EV_SIM_GENDERS,        # (turbo_sim, *args, ww_genders) -> tuple
     satisfaction.EV_LEVEL,       # (sim, instance, target, ww_level)
     satisfaction.EV_PAIR_LEVEL,  # (sim, target, instance, ww_level)
     satisfaction.EV_BUFF,        # (sim, instance, is_positive, ww_buff)

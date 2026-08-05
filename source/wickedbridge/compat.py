@@ -25,6 +25,7 @@ M_ZONE = 'turbolib2.events.zone_spin'
 M_TICKSVC = 'wickedwhims.main.game_handlers.tick_handler'
 M_LOGGER = 'wickedwhims.debug.logger'
 M_SIMS = 'wickedwhims.sex.generic.utils.sims'
+M_GENDER = 'wickedwhims.sex.enums.sex_gender'
 M_CONDOMS = 'wickedwhims.sex.pregnancy.birth_control.condoms'
 M_PILLS = 'wickedwhims.sex.pregnancy.birth_control.pills'
 M_SATIS = ('wickedwhims.sex.integral.sex_handlers.active_sex.sex_actions'
@@ -48,6 +49,9 @@ REQUIRED = (
     # is_sim_allowed_for_sex was gated here until 0.7.0 -- see gates.GATES for
     # why it was withdrawn. Do not add it back without an enforcement path.
     ('is_sim_sex_appropriate',   M_SIMS,     'is_sim_sex_appropriate',   False),
+    # the tuple of animation roles a Sim may fill -- read by the picker,
+    # the start test, set_animation_instance and swap_actors
+    ('get_sim_sex_genders',      M_GENDER,   'get_sim_sex_genders',      False),
     ('is_condom_applicable_for_sim', M_CONDOMS, 'is_condom_applicable_for_sim', False),
     ('is_birth_control_pill_applicable_for_sim', M_PILLS,
      'is_birth_control_pill_applicable_for_sim', False),

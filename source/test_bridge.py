@@ -153,6 +153,15 @@ satis_mod._get_sim_dynamic_sex_satisfaction_value = lambda sim, inst: 3
 satis_mod._get_targets_base_sex_satisfaction_value = lambda sim, inst, target: 2
 satis_mod._get_targets_dynamic_sex_satisfaction_value = lambda sim, inst, target: 1
 
+# Animation roles. WickedWhims resolves a Sim's admissible slot genders here,
+# and everything that assigns Sims to animation slots reads the result.
+MALE, FEMALE, BOTH = 1, 11, 50
+gender_mod = make_module('wickedwhims.sex.enums.sex_gender')
+gender_mod.get_sim_sex_genders = lambda sim, ignore=False, both=None: (MALE,)
+# a module that did `from sex_gender import get_sim_sex_genders` before us
+gender_importer = make_module('wickedwhims.fake_gender_caller')
+gender_importer.get_sim_sex_genders = gender_mod.get_sim_sex_genders
+
 zone_mod = make_module('turbolib2.events.zone_spin')
 
 
@@ -177,7 +186,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.7.0')
+check('module imports', wickedbridge.VERSION == '0.8.0')
 check('used turbolib2 zone registration, not the fallback',
       len(ZONE_CALLBACKS) == 1, 'fell back to zone.Zone')
 
@@ -535,6 +544,49 @@ check('model is observe-only in this build', _sat.MODEL_REPLACES_WW is False)
 satis_mod.get_sex_satisfaction_level('sim', 'inst', 'target')
 check('WickedWhims value still returned while observing',
       _sat.model_stats()['samples'] >= 1)
+
+print('--- animation roles ---')
+from wickedbridge import roles
+check('role resolver installed', roles._installed == [roles.EV_SIM_GENDERS],
+      str(roles._installed))
+check('wrapper reached the importing module too',
+      gender_importer.get_sim_sex_genders is gender_mod.get_sim_sex_genders)
+check('untouched value passes through',
+      gender_mod.get_sim_sex_genders('sim') == (MALE,))
+
+wickedbridge.resolve('sex.sim_genders',
+                     lambda sim, *rest: (FEMALE,) if sim == 'caged' else None)
+check('a subscriber can narrow which roles a Sim fits',
+      gender_mod.get_sim_sex_genders('caged') == (FEMALE,))
+check('abstaining leaves WickedWhims answer alone',
+      gender_mod.get_sim_sex_genders('free') == (MALE,))
+check('narrowing is counted', roles.counts()['narrowed'] >= 1)
+
+before = roles.counts()['refused_empty']
+wickedbridge.resolve('sex.sim_genders',
+                     lambda sim, *rest: () if sim == 'empty' else None)
+check('an empty replacement is refused -- a Sim must fit some role',
+      gender_mod.get_sim_sex_genders('empty') == (MALE,)
+      and roles.counts()['refused_empty'] == before + 1)
+
+wickedbridge.resolve('sex.sim_genders',
+                     lambda sim, *rest: (BOTH,) if sim == 'chain' else None)
+wickedbridge.resolve('sex.sim_genders',
+                     lambda sim, *rest: rest[-1] + (FEMALE,) if sim == 'chain' else None)
+check('two mods each narrow in turn, second sees the first answer',
+      gender_mod.get_sim_sex_genders('chain') == (BOTH, FEMALE),
+      str(gender_mod.get_sim_sex_genders('chain')))
+
+
+def _bad_role(*a):
+    raise RuntimeError('resolver bug')
+
+
+wickedbridge.resolve('sex.sim_genders', _bad_role)
+check('a throwing resolver does not break role resolution',
+      gender_mod.get_sim_sex_genders('free') == (MALE,))
+check('sex.sim_genders is advertised as a resolver',
+      roles.EV_SIM_GENDERS in wickedbridge.RESOLVERS)
 
 print()
 print('%d passed, %d failed' % (len(PASS), len(FAIL)))
