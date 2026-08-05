@@ -158,6 +158,11 @@ satis_mod._get_targets_dynamic_sex_satisfaction_value = lambda sim, inst, target
 MALE, FEMALE, BOTH = 1, 11, 50
 gender_mod = make_module('wickedwhims.sex.enums.sex_gender')
 gender_mod.get_sim_sex_genders = lambda sim, ignore=False, both=None: (MALE,)
+# BOTH fits either slot, so it counts as male-fitting -- that is what makes it
+# the interesting case for without_male_roles.
+gender_mod.is_male_sex_gender = lambda g: g in (MALE, BOTH)
+gender_mod.is_female_sex_gender = lambda g: g in (FEMALE, BOTH)
+gender_mod.get_opposite_sex_gender_variant = lambda g: {MALE: FEMALE, FEMALE: MALE}.get(g, g)
 # a module that did `from sex_gender import get_sim_sex_genders` before us
 gender_importer = make_module('wickedwhims.fake_gender_caller')
 gender_importer.get_sim_sex_genders = gender_mod.get_sim_sex_genders
@@ -587,6 +592,22 @@ check('a throwing resolver does not break role resolution',
       gender_mod.get_sim_sex_genders('free') == (MALE,))
 check('sex.sim_genders is advertised as a resolver',
       roles.EV_SIM_GENDERS in wickedbridge.RESOLVERS)
+
+check('a male-only Sim is mapped to the female role, not emptied',
+      wickedbridge.without_male_roles((MALE,)) == (FEMALE,),
+      str(wickedbridge.without_male_roles((MALE,))))
+check('a Sim with a female role keeps it and loses only the male one',
+      wickedbridge.without_male_roles((MALE, FEMALE)) == (FEMALE,),
+      str(wickedbridge.without_male_roles((MALE, FEMALE))))
+check('a female-only Sim is untouched',
+      wickedbridge.without_male_roles((FEMALE,)) == (FEMALE,))
+before_nf = roles.counts()['no_female_role']
+check('a Sim with no reachable female role is left alone, not broken',
+      wickedbridge.without_male_roles((BOTH,)) == (BOTH,)
+      and roles.counts()['no_female_role'] == before_nf + 1)
+check('the helpers need no SexGenderType constant from the caller',
+      wickedbridge.is_male_role(MALE) and not wickedbridge.is_male_role(FEMALE)
+      and wickedbridge.opposite_role(MALE) == FEMALE)
 
 print()
 print('%d passed, %d failed' % (len(PASS), len(FAIL)))

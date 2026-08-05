@@ -52,6 +52,13 @@ REQUIRED = (
     # the tuple of animation roles a Sim may fill -- read by the picker,
     # the start test, set_animation_instance and swap_actors
     ('get_sim_sex_genders',      M_GENDER,   'get_sim_sex_genders',      False),
+    # WickedWhims' own gender predicates. Borrowed rather than reimplemented:
+    # the SexGenderType table has occult variants whose numbers are easy to
+    # transcribe wrongly, and a wrong constant here silently admits a Sim to a
+    # role a mod meant to deny.
+    ('is_male_sex_gender',       M_GENDER,   'is_male_sex_gender',       False),
+    ('is_female_sex_gender',     M_GENDER,   'is_female_sex_gender',     False),
+    ('opposite_sex_gender',      M_GENDER,   'get_opposite_sex_gender_variant', False),
     ('is_condom_applicable_for_sim', M_CONDOMS, 'is_condom_applicable_for_sim', False),
     ('is_birth_control_pill_applicable_for_sim', M_PILLS,
      'is_birth_control_pill_applicable_for_sim', False),

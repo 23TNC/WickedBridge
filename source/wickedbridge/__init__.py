@@ -83,6 +83,13 @@ def scale(event, callback, priority=0):
     return events.subscribe(event + '#scale', callback, priority=priority)
 
 
+# Role helpers, so a subscriber to sex.sim_genders never needs a SexGenderType
+# constant of its own.
+without_male_roles = roles.without_male_roles
+is_male_role = roles.is_male
+is_female_role = roles.is_female
+opposite_role = roles.opposite
+
 # The satisfaction keys mods may contribute to, and how to add more.
 satisfaction_keys = satisfaction_model.keys
 register_satisfaction_key = satisfaction_model.register_key
