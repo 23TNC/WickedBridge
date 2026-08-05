@@ -114,7 +114,7 @@ states_mod = make_module('wickedwhims.sex.integral.sex_handlers.sex_instance_sta
 states_mod.SexInstanceStateType = type('SexInstanceStateType', (), {'IS_POSE': 1})
 
 sims_mod = make_module('wickedwhims.sex.generic.utils.sims')
-sims_mod.is_sim_allowed_for_sex = lambda sim: True
+sims_mod.is_sim_allowed_for_sex = lambda sim: True   # still defined by WW; no longer gated
 sims_mod.is_sim_sex_appropriate = lambda sim: True
 condoms_mod = make_module('wickedwhims.sex.pregnancy.birth_control.condoms')
 condoms_mod.is_condom_applicable_for_sim = lambda sim: True
@@ -122,7 +122,7 @@ pills_mod = make_module('wickedwhims.sex.pregnancy.birth_control.pills')
 pills_mod.is_birth_control_pill_applicable_for_sim = lambda sim: True
 # a caller that imported the predicate before we installed
 gate_importer = make_module('wickedwhims.fake_gate_caller')
-gate_importer.is_sim_allowed_for_sex = sims_mod.is_sim_allowed_for_sex
+gate_importer.is_sim_sex_appropriate = sims_mod.is_sim_sex_appropriate
 
 GAME_UPDATE = []
 ticksvc_mod = make_module('wickedwhims.main.game_handlers.tick_handler')
@@ -177,7 +177,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.6.1')
+check('module imports', wickedbridge.VERSION == '0.7.0')
 check('used turbolib2 zone registration, not the fallback',
       len(ZONE_CALLBACKS) == 1, 'fell back to zone.Zone')
 
@@ -204,7 +204,7 @@ check('recovers once WickedWhims appears', len(_c.missing(required_only=True)) =
 print('--- zone load and install ---')
 for cb in ZONE_CALLBACKS:
     cb()
-check('all 4 compat symbols resolved', len(bootstrap.compat.missing()) == 0,
+check('all compat symbols resolved', len(bootstrap.compat.missing()) == 0,
       str(bootstrap.compat.missing()))
 check('install reported ok', bootstrap._state['install'] == 'ok',
       bootstrap._state['install'])
@@ -326,22 +326,26 @@ check('act removed from active list',
 
 print('--- gates ---')
 from wickedbridge import gates
-check('all 4 gates installed', len(gates._installed) == 4, str(gates._installed))
+check('every declared gate installed',
+      len(gates._installed) == len(gates.GATES), str(gates._installed))
+check('sex.allow_sim is gone -- it could not enforce anything',
+      'sex.allow_sim' not in [g[0] for g in gates.GATES]
+      and 'sex.allow_sim' not in wickedbridge.GATES)
 check('gate wrapper reached the importing module too',
-      gate_importer.is_sim_allowed_for_sex is sims_mod.is_sim_allowed_for_sex)
+      gate_importer.is_sim_sex_appropriate is sims_mod.is_sim_sex_appropriate)
 check('un-gated predicate still returns WW answer',
-      sims_mod.is_sim_allowed_for_sex('sim_x') is True)
+      sims_mod.is_sim_sex_appropriate('sim_x') is True)
 
 denied = {'called': 0}
 def deny_chastity(sim):
     denied['called'] += 1
     return False if sim == 'chaste_sim' else None
 
-wickedbridge.gate('sex.allow_sim', deny_chastity)
+wickedbridge.gate('sex.appropriate', deny_chastity)
 check('veto denies for the targeted Sim',
-      sims_mod.is_sim_allowed_for_sex('chaste_sim') is False)
+      sims_mod.is_sim_sex_appropriate('chaste_sim') is False)
 check('abstain passes through to WickedWhims',
-      sims_mod.is_sim_allowed_for_sex('other_sim') is True)
+      sims_mod.is_sim_sex_appropriate('other_sim') is True)
 check('veto was attributed', 'deny_chastity' in (gates.veto_log() or ''),
       str(gates.veto_log()))
 
@@ -394,7 +398,7 @@ check('settings.names lists available members',
       'CUM_SWITCH_STATE' in _s.names('sex'))
 
 check('gates use the live subscriber list (no per-call copy)',
-      events.raw_subscribers('sex.allow_sim') is not None)
+      events.raw_subscribers('sex.appropriate') is not None)
 
 print('--- satisfaction ---')
 from wickedbridge import satisfaction as _sat

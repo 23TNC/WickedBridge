@@ -18,6 +18,19 @@ def build(target, entries):
     return names
 
 
+# Recompile rather than zipping whatever .pyc happens to be lying around.
+# Skipping this once shipped an archive with a byte-identical hash to the
+# previous build, which read as "nothing changed" instead of "nothing was
+# rebuilt".
+import compileall, shutil, sys
+if sys.version_info[:2] != (3, 7):
+    raise SystemExit('run this with Python 3.7 -- the game ignores other bytecode')
+shutil.rmtree('wickedbridge/__pycache__', ignore_errors=True)
+for stale in glob.glob('wickedbridge/*.pyc'):
+    os.remove(stale)
+if not compileall.compile_dir('wickedbridge', legacy=True, quiet=1):
+    raise SystemExit('compile failed')
+
 pycs = sorted(glob.glob('wickedbridge/*.pyc'))
 assert pycs, 'no .pyc -- compile with Python 3.7 first'
 names = build(os.path.join(MODS, 'WickedBridge.ts4script'),
