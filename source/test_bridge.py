@@ -178,9 +178,10 @@ OPENED = []
 
 
 class FakeBranch(object):
-    """A branch row: no setting_identifier, like WickedWhims' own."""
-    def __init__(self, name, callback_name=None):
-        self.option_name = None
+    """A branch row, shaped like WickedWhims': no setting_identifier, and its
+    title comes from the child window via super().__init__."""
+    def __init__(self, name, callback_name=None, title=None):
+        self.name = title
         self.selected = 0
         if callback_name:
             def cb():
@@ -195,14 +196,17 @@ class FakeBranch(object):
 
 class FakeElement(object):
     def __init__(self, name, setting_identifier=None):
-        self.option_name = name
+        # _SettingsWindowElement stores the title as self.name -- reading
+        # `option_name` (the parameter name) is what made every row look
+        # unaddressable in the first live run.
+        self.name = name
         if setting_identifier is not None:
             self.setting_identifier = setting_identifier
         self.selected = 0
 
     def _select(self):
         self.selected += 1
-        return self.option_name
+        return self.name
 
 
 class FakeSettingsWindow(object):
@@ -217,7 +221,7 @@ class FakeSettingsWindow(object):
 
     def open(self, *a, **kw):
         # what WickedWhims does: enumerate(self.elements) into the dialog
-        OPENED.append([e.option_name for e in self.elements])
+        OPENED.append([getattr(e, 'name', None) for e in self.elements])
         return list(enumerate(self.elements))
 
     def _window_callback(self, element_index):
@@ -256,7 +260,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.13.0')
+check('module imports', wickedbridge.VERSION == '0.14.0')
 check('used turbolib2 zone registration, not the fallback',
       len(ZONE_CALLBACKS) == 1, 'fell back to zone.Zone')
 
@@ -755,7 +759,7 @@ w = _window()
 rows = w.open()
 for index, element in rows:
     check('row %d dispatches to the element it displays' % index,
-          w._window_callback(index) == element.option_name)
+          w._window_callback(index) == element.name)
 
 menu.upsert('gender_recognition', lambda: FakeElement('mod_a'), key='a')
 menu.upsert('gender_recognition', lambda: FakeElement('mod_b'), key='b')
@@ -767,7 +771,7 @@ check('upserts from several mods union rather than clobber',
 w = _window()
 rows = w.open()
 check('indices still line up after removals and upserts',
-      all(w._window_callback(i) == e.option_name for i, e in rows))
+      all(w._window_callback(i) == e.name for i, e in rows))
 
 check('upsert keys default to the declaring mod, so two mods cannot collide',
       len(set(k[1] for k in menu._upserts)) == len(menu._upserts))
@@ -830,6 +834,11 @@ check('a branch is keyed by the callback that opens it',
       idx['0.1'][1] == 'callback:open_gender_recognition', str(idx['0.1']))
 check('rows with no key at all are handed a positional match',
       idx['0.2'][1] == ('#', 2) and idx['0.3'][1] == ('#', 3), str(idx))
+check('a folder with no callback still keys off its title',
+      menu.element_key(FakeBranch('x', title='child_window_title'))
+      == 'child_window_title')
+check('name is read, not option_name -- the attribute WickedWhims stores',
+      menu.element_key(FakeElement('teen_sex')) == 'teen_sex')
 
 window_id, match, _i = idx['0.2']
 menu.remove(window_id, match)

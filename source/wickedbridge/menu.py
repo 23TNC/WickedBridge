@@ -76,19 +76,31 @@ def element_key(element):
 
     Tried in order:
 
-      setting_identifier   a real setting -- the best handle there is
-      the callback name    a branch or custom element carries the function
-                           that opens it, and that name comes from
-                           WickedWhims' source, so it survives restarts
-      option_name          a localised-string key, language-stable
+      setting_identifier              a real setting -- the best handle
+      modification_setting_identifier what a branch reports as modified
+      the callback name               a branch carries the function that opens
+                                      it, and that name is from WickedWhims'
+                                      source, so it survives restarts
+      name                            the row title as a localised-string KEY,
+                                      language-stable. For a branch this is
+                                      the CHILD WINDOW'S title, because
+                                      SettingsBranchElement.__init__ calls its
+                                      callback and passes window.title to
+                                      super().
+
+    Note `name`, not `option_name`: option_name is only the parameter name in
+    _SettingsWindowElement.__init__, which stores it as self.name. Reading the
+    parameter name returned None for every element, which is why every folder
+    looked unaddressable.
 
     None means this element cannot be addressed by key, which callers MUST
     handle: matching on None once removed every unkeyed element in a window
     at once, because they all compared equal.
     """
-    value = getattr(element, 'setting_identifier', None)
-    if value is not None:
-        return value
+    for attr in ('setting_identifier', 'modification_setting_identifier'):
+        value = getattr(element, attr, None)
+        if value is not None:
+            return value
     for attr in ('branch_window_callback', 'custom_callback',
                  'settings_window_callback', 'modification_callback'):
         callback = getattr(element, attr, None)
@@ -99,7 +111,7 @@ def element_key(element):
             name = getattr(getattr(callback, '__func__', None), '__name__', None)
         if name:
             return 'callback:%s' % name
-    value = getattr(element, 'option_name', None)
+    value = getattr(element, 'name', None)
     if value is not None:
         return value
     return None
