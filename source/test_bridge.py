@@ -390,7 +390,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.19.1')
+check('module imports', wickedbridge.VERSION == '0.19.2')
 # The harness used to overwrite the player's live status file, because
 # _candidate_paths tried a hardcoded user folder ahead of expanduser -- so no
 # redirect could get in front of it. A test run once replaced a real dialog
@@ -919,27 +919,37 @@ check('a dialog yielding no rows records its shape rather than vanishing',
 
 
 class Unhashable(object):
-    """turbolib2 stores the resolved LocalizedString in `title`, not a key,
-    and that object need not be hashable -- using it as a dict key raised and
-    the failure was swallowed."""
+    """A LocalizedString protobuf: unhashable, repr carries an address that
+    changes every run, but it does carry the string hash as a field."""
 
     __hash__ = None
 
+    def __init__(self, hash_=None):
+        if hash_ is not None:
+            self.hash = hash_
+
     def __repr__(self):
-        return "LocalizedString(body_selector)"
+        return "<Localization_pb2.LocalizedString object at 0x00007FF4FA6EE598>"
 
 
-unhashable = FakePickerDialog(Unhashable(),
+unhashable = FakePickerDialog(Unhashable(0xABCDEF),
                               dynamic=lambda state: [FakeRow('tongue')])
 unhashable.display()
-check('an unhashable title does not stop the dialog being recorded',
-      any('body_selector' in str(k) for k in dlg.observed()),
-      str(list(dlg.observed())))
+check('the protobuf string hash identifies the dialog, not its repr',
+      0xABCDEF in dlg.observed(), str(list(dlg.observed())))
 check('and it was recorded with its rows, not as an empty shape',
-      any(v == ['tongue'] for v in dlg.observed().values()),
-      str(dlg.observed()))
+      dlg.observed().get(0xABCDEF) == ['tongue'], str(dlg.observed()))
 check('no error was swallowed getting there', dlg._last_error[0] is None,
       str(dlg._last_error[0]))
+
+no_hash = FakePickerDialog(Unhashable(), dynamic=lambda state: [FakeRow('x')])
+no_hash.display()
+check('with no hash field the address is stripped, so the key is at least '
+      'stable within a session',
+      any(isinstance(k, str) and '0x' not in k for k in dlg.observed()),
+      str([k for k in dlg.observed() if isinstance(k, str)]))
+check('and the report warns that repr identities can collide',
+      any('identified only by repr' in l for l in dlg.report_lines()))
 dlg.withdraw(hany)
 
 # The console dismisses the dialog, so the file has to write itself.

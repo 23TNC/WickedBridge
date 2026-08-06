@@ -41,6 +41,8 @@ _counts = {'displays': 0, 'removed': 0, 'reserved': 0, 'added': 0,
            'failed': 0, 'dynamic_failed': 0, 'errors': 0}
 _shapes = {}
 _last_error = [None]
+_title_source = {}
+_row_names = {}
 _installed = []
 
 
@@ -86,20 +88,65 @@ def row_key(row):
     return None
 
 
-def dialog_title(dialog):
-    """A hashable, printable stand-in for the dialog title.
+def _row_name(row):
+    """Whatever a row calls itself, for the listing.
 
-    `title` is NOT the localisation key -- turbolib2 stores the resolved
-    LocalizedString that get_l18n_service() returned, and that object is not
-    guaranteed hashable. Using it as a dict key raised, which _apply swallowed,
-    which is why a live run reported one display and zero dialogs seen.
+    Identifiers turned out to be positional (0, 1, 2, 3), so the name is what
+    actually tells a reader which row is which.
+    """
+    for attr in ('get_name', 'get_description'):
+        getter = getattr(row, attr, None)
+        if getter is None:
+            continue
+        try:
+            value = getter()
+        except Exception:
+            continue
+        if value is not None:
+            text = repr(value)
+            cut = text.find(' object at 0x')
+            return (text[:cut] + '>') if cut != -1 else text[:60]
+    return None
+
+
+def dialog_title(dialog):
+    """A stable, hashable identity for a dialog.
+
+    `title` holds the RESOLVED LocalizedString, not the localisation key --
+    turbolib2 does self.title = get_l18n_service().get_localized_string(...).
+    That object is a protocol buffer: unhashable, and its repr carries a
+    memory address that changes every run, so neither the object nor its repr
+    can identify a dialog across sessions.
+
+    The protobuf does carry the string hash as a field, and that IS stable and
+    language-independent, so it is preferred. Everything after it is a
+    fallback that keeps the bridge working while making the degradation
+    visible in the report.
     """
     raw = getattr(dialog, 'title', None)
+    if raw is None:
+        return None
+    for attr in ('hash', 'string_hash', 'key'):
+        try:
+            value = getattr(raw, attr, None)
+        except Exception:
+            continue
+        if isinstance(value, int) and value:
+            _title_source['hash'] = _title_source.get('hash', 0) + 1
+            return value
     try:
         hash(raw)
+        _title_source['object'] = _title_source.get('object', 0) + 1
         return raw
     except Exception:
-        return repr(raw)[:120]
+        pass
+    # Last resort: repr with the address stripped, so at least it is stable
+    # within a session. Distinct dialogs may collide here, which is why the
+    # report says how many titles came from this branch.
+    _title_source['repr'] = _title_source.get('repr', 0) + 1
+    text = repr(raw)
+    cut = text.find(' object at 0x')
+    return (text[:cut] + '>') if cut != -1 else text[:120]
 
 
 def _matches(match, row, index=None):
@@ -217,6 +264,7 @@ def _apply(dialog):
     state, rows = _effective_rows(dialog)
 
     seen = [row_key(r) for r in rows]
+    _row_names[title] = [_row_name(r) for r in rows]
     fresh = title not in _observed
     _observed[title] = seen
     if not rows:
@@ -338,8 +386,10 @@ def listing():
         for r, key in enumerate(keys):
             unique = key is not None and keys.count(key) == 1
             index['d%d.%d' % (d, r)] = (title, key if unique else ('#', r), r)
-            lines.append('       [d%d.%d] %r%s'
-                         % (d, r, key,
+            names = _row_names.get(title) or []
+            label = names[r] if r < len(names) else None
+            lines.append('       [d%d.%d] %-10r %s%s'
+                         % (d, r, key, label or '',
                             '' if unique else '   <- addressed by position'))
     return lines, index
 
@@ -380,6 +430,12 @@ def report_lines():
                      % (title, ', '.join(attrs)))
     if _counts['dynamic_failed']:
         lines.append('   %d dynamic row functions raised' % _counts['dynamic_failed'])
+    if _title_source:
+        lines.append('   dialog identity came from: %s' % _title_source)
+        if _title_source.get('repr'):
+            lines.append('   WARNING %d dialogs identified only by repr -- '
+                         'distinct dialogs can collide there'
+                         % _title_source['repr'])
     if _last_error[0]:
         lines.append('   LAST ERROR building a dialog: %s' % _last_error[0])
     if _counts['displays'] and not _observed and not _last_error[0]:
