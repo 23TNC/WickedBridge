@@ -38,7 +38,7 @@ _upserts = {}
 _next_token = [0]
 
 _counts = {'displays': 0, 'removed': 0, 'reserved': 0, 'added': 0,
-           'failed': 0, 'dynamic_failed': 0, 'errors': 0}
+           'failed': 0, 'dynamic_failed': 0, 'errors': 0, 'routed': 0}
 _shapes = {}
 _last_error = [None]
 _title_source = {}
@@ -186,8 +186,17 @@ def reserve(title, match, reason=None):
     return _declare(_reservations, 'reserve', title, match, reason)
 
 
-def upsert(title, factory, key=None, order=None, reason=None):
+def upsert(title, factory, key=None, order=None, reason=None, on_select=None,
+           tag=None):
     """Add a row. `factory(dialog, state)` returns a TurboObjectPickerRow.
+
+    `on_select(tag, dialog)` is called when the player picks this row, and
+    `tag` is the value the row was built with. This matters because
+    _dialog_response hands WickedWhims' own callback get_result_tags() -- the
+    row TAG, not its identifier -- so an added row would otherwise deliver a
+    tag WickedWhims has no idea what to do with. Supplying on_select makes the
+    bridge intercept that tag and route it here instead, passing everything
+    else through untouched.
 
     See `row_classes()` for the constructor, so a consuming mod never imports
     from turbolib2 itself.
@@ -196,7 +205,7 @@ def upsert(title, factory, key=None, order=None, reason=None):
     if key is None:
         key = '%s#%d' % (owner, len(_upserts))
     _upserts[(title, key)] = dict(factory=factory, owner=owner, reason=reason,
-                                  order=order)
+                                  order=order, on_select=on_select, tag=tag)
     return ('upsert', title, key)
 
 
@@ -296,25 +305,82 @@ def _apply(dialog):
     additions.sort(key=lambda item: (item[1]['order'] is None,
                                      item[1]['order'], item[1]['owner'],
                                      str(item[0][1])))
+    routes = {}
     for _key, spec in additions:
         try:
             row = spec['factory'](dialog, state)
         except Exception:
             _counts['failed'] += 1
             continue
-        if row is not None:
-            kept.append(row)
-            _counts['added'] += 1
+        if row is None:
+            continue
+        kept.append(row)
+        _counts['added'] += 1
+        if spec.get('on_select') is not None:
+            tag = spec.get('tag')
+            if tag is None:
+                getter = getattr(row, 'get_tag', None)
+                try:
+                    tag = getter() if getter else None
+                except Exception:
+                    tag = None
+            if tag is not None:
+                routes[tag] = spec['on_select']
 
     static = getattr(dialog, 'picker_rows', None)
     if isinstance(static, dict):
         static[state] = kept
+    _route_callback(dialog, routes)
     if fresh:
         try:
             from . import bootstrap
             bootstrap.write_report()
         except Exception:
             pass
+
+
+def _route_callback(dialog, routes):
+    """Intercept selections of rows we added, pass everything else through.
+
+    WickedWhims' callback receives the selected row TAGS. A tag it did not
+    create means nothing to it, so ours are pulled out first. The wrapper is
+    marked to survive repeated builds without stacking.
+    """
+    if not routes:
+        return
+    original = getattr(dialog, 'callback', None)
+    if original is None:
+        return
+    if getattr(original, '_wickedbridge_routed', False):
+        original._wickedbridge_routes.update(routes)
+        return
+
+    table = dict(routes)
+
+    def _callback(result=None, *args, **kwargs):
+        try:
+            tags = result if isinstance(result, (list, tuple, set)) else [result]
+            for tag in tags:
+                handler = table.get(tag)
+                if handler is not None:
+                    _counts['routed'] += 1
+                    try:
+                        return handler(tag, dialog)
+                    except Exception as ex:
+                        _counts['errors'] += 1
+                        _last_error[0] = 'on_select raised: %r' % (ex,)
+                        return None
+        except Exception:
+            pass
+        return original(result, *args, **kwargs)
+
+    _callback._wickedbridge_routed = True
+    _callback._wickedbridge_routes = table
+    try:
+        dialog.callback = _callback
+    except Exception:
+        _counts['errors'] += 1
+        _last_error[0] = 'could not wrap dialog callback'
 
 
 def install():
@@ -410,9 +476,9 @@ def mutations():
 def report_lines():
     lines = ['picker dialogs: %s, displays=%d'
              % ('on' if _installed else 'OFF', _counts['displays']),
-             '   removed=%d reserved=%d added=%d factory errors=%d'
-             % (_counts['removed'], _counts['reserved'],
-                _counts['added'], _counts['failed'])]
+             '   removed=%d reserved=%d added=%d routed=%d factory errors=%d'
+             % (_counts['removed'], _counts['reserved'], _counts['added'],
+                _counts['routed'], _counts['failed'])]
     for entry in mutations():
         lines.append('   %-7s %-20s %-18s by %s -- %s'
                      % (entry['kind'], str(entry['dialog'])[:20],

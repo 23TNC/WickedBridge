@@ -320,9 +320,13 @@ DISPLAYED = []
 
 
 class FakeRow(object):
-    def __init__(self, identifier, name=None):
+    def __init__(self, identifier, name=None, tag=None):
         self._id = identifier
         self._name = name or str(identifier)
+        self._tag = tag
+
+    def get_tag(self):
+        return self._tag
 
     def get_identifier(self):
         return self._id
@@ -354,6 +358,10 @@ class FakePickerDialog(object):
 
     def display(self, client_sim=None):
         return self._build_dialog_picker_rows(self.picker_rows_state)
+
+    def choose(self, tag):
+        """What _dialog_response does: hand the callback the result TAGS."""
+        return self.callback([tag])
 
 
 class FakePickerCategory(object):
@@ -390,7 +398,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.19.2')
+check('module imports', wickedbridge.VERSION == '0.20.0')
 # The harness used to overwrite the player's live status file, because
 # _candidate_paths tried a hardcoded user folder ahead of expanduser -- so no
 # redirect could get in front of it. A test run once replaced a real dialog
@@ -968,6 +976,27 @@ check('a never-before-seen dialog writes the report unprompted',
 
 check('a row with no identity never matches None',
       dlg._matches(None, FakeRow(None)) is False)
+# Selecting an added row must reach OUR handler, not WickedWhims' -- it is
+# handed the row tag, and a tag it never created means nothing to it.
+WW_CALLBACK = []
+OUR_PICKS = []
+routed = FakePickerDialog(0x5150, dynamic=lambda state: [FakeRow(0, tag='ww_row')])
+routed.callback = lambda result, *a, **kw: WW_CALLBACK.append(result)
+dlg.upsert(0x5150, lambda d, st: FakeRow(99, tag='has_penis'), key='hp',
+           on_select=lambda tag, d: OUR_PICKS.append(tag), tag='has_penis')
+routed.display()
+routed.choose('has_penis')
+check('selecting an added row calls our handler, not WickedWhims',
+      OUR_PICKS == ['has_penis'] and WW_CALLBACK == [], str((OUR_PICKS, WW_CALLBACK)))
+routed.choose('ww_row')
+check("WickedWhims' own rows still reach its callback untouched",
+      WW_CALLBACK == [['ww_row']], str(WW_CALLBACK))
+routed.display()
+routed.display()
+check('rebuilding does not stack callback wrappers',
+      routed.callback._wickedbridge_routed is True)
+dlg.withdraw(('upsert', 0x5150, 'hp'))
+
 check('row_classes exposes turbolib2 constructors',
       'TurboObjectPickerRow' in wickedbridge.dialog_row_classes())
 check('dialog verbs are on the public surface',
