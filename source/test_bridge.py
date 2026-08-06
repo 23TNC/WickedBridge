@@ -22,6 +22,8 @@ import os, sys, tempfile, types
 _TMP = tempfile.mkdtemp(prefix='wickedbridge_test_')
 _real_expanduser = os.path.expanduser
 os.path.expanduser = lambda p: _TMP if p == '~' else _real_expanduser(p)
+os.environ['USERPROFILE'] = _TMP
+os.environ['HOME'] = _TMP
 os.chdir(_TMP)
 
 PASS, FAIL = [], []
@@ -377,7 +379,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.18.2')
+check('module imports', wickedbridge.VERSION == '0.18.3')
 # The harness used to overwrite the player's live status file, because
 # _candidate_paths tried a hardcoded user folder ahead of expanduser -- so no
 # redirect could get in front of it. A test run once replaced a real dialog
@@ -388,6 +390,11 @@ check('the report writes under the redirected home, not a fixed path',
 check('the paths derive from home, so this ships to other machines',
       all(p.startswith(_TMP) or p.startswith(os.getcwd()) for p in _paths),
       str(_paths))
+check('the report says where it wrote, so a missing file is never a mystery',
+      bootstrap.write_report() and _TMP in bootstrap._state['report_path'],
+      str(bootstrap._state['report_path']))
+check('and the path appears in the report itself',
+      any('status file:' in l for l in bootstrap.report()))
 check('used turbolib2 zone registration, not the fallback',
       len(ZONE_CALLBACKS) == 1, 'fell back to zone.Zone')
 

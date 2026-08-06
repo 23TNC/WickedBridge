@@ -12,10 +12,11 @@ import sys
 from . import (animations, compat, dialogs, events, gates, menu, roles,
                satisfaction, settings, sex)
 
-VERSION = '0.18.2'
+VERSION = '0.18.3'
 STATUS_FILE = 'WickedBridge_status.txt'
 
-_state = {'imported': True, 'zone_load': 'not yet', 'install': 'not attempted'}
+_state = {'imported': True, 'zone_load': 'not yet',
+          'install': 'not attempted', 'report_path': 'not written yet'}
 
 
 # --------------------------------------------------------------------------
@@ -24,20 +25,33 @@ _state = {'imported': True, 'zone_load': 'not yet', 'install': 'not attempted'}
 def _candidate_paths(filename):
     """Where to write the status file, best first.
 
-    This used to try one hardcoded Windows user folder before anything else,
-    which was wrong twice over: it would write into one particular person's
-    directory on every other machine, and it made the offline harness clobber
-    the real diagnostics because no redirect could get ahead of it.
+    The Sims 4 embeds Python and does not guarantee expanduser('~') resolves,
+    which is why a hardcoded folder used to sit at the front of this list.
+    Removing it fixed one problem and caused another. So: try several ways to
+    find a home directory, take the first that gives a real answer, and record
+    which one worked -- a status file nobody can find is worse than no status
+    file, and "it stopped doing anything" should never be a mystery again.
     """
     import os
+    bases = []
+
+    def _add(home):
+        if home and home != '~' and home not in bases:
+            bases.append(home)
+
+    for getter in (lambda: os.environ.get('USERPROFILE'),
+                   lambda: os.path.expanduser('~'),
+                   lambda: os.environ.get('HOME')):
+        try:
+            _add(getter())
+        except Exception:
+            continue
+
     paths = []
-    try:
-        base = os.path.join(os.path.expanduser('~'), 'Documents',
-                            'Electronic Arts', 'The Sims 4')
+    for home in bases:
+        base = os.path.join(home, 'Documents', 'Electronic Arts', 'The Sims 4')
         paths.append(os.path.join(base, filename))
         paths.append(os.path.join(base, 'Mods', filename))
-    except Exception:
-        pass
     try:
         paths.append(os.path.join(os.getcwd(), filename))
     except Exception:
@@ -50,6 +64,7 @@ def report():
              'module imported: %s' % _state['imported'],
              'zone load: %s' % _state['zone_load'],
              'install: %s' % _state['install'],
+             'status file: %s' % _state['report_path'],
              '']
     lines += compat.report_lines()
     lines.append('')
@@ -75,15 +90,18 @@ def report():
 
 def write_report():
     lines = report()
-    for path in _candidate_paths(STATUS_FILE):
+    tried = _candidate_paths(STATUS_FILE)
+    for path in tried:
         try:
             with open(path, 'w') as handle:
                 for line in lines:
                     handle.write(line)
                     handle.write(chr(10))
+            _state['report_path'] = path
             return path
         except Exception:
             continue
+    _state['report_path'] = 'FAILED -- tried: %s' % ', '.join(tried)
     return None
 
 
