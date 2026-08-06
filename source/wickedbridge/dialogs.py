@@ -38,8 +38,9 @@ _upserts = {}
 _next_token = [0]
 
 _counts = {'displays': 0, 'removed': 0, 'reserved': 0, 'added': 0,
-           'failed': 0, 'dynamic_failed': 0}
+           'failed': 0, 'dynamic_failed': 0, 'errors': 0}
 _shapes = {}
+_last_error = [None]
 _installed = []
 
 
@@ -86,7 +87,19 @@ def row_key(row):
 
 
 def dialog_title(dialog):
-    return getattr(dialog, 'title', None)
+    """A hashable, printable stand-in for the dialog title.
+
+    `title` is NOT the localisation key -- turbolib2 stores the resolved
+    LocalizedString that get_l18n_service() returned, and that object is not
+    guaranteed hashable. Using it as a dict key raised, which _apply swallowed,
+    which is why a live run reported one display and zero dialogs seen.
+    """
+    raw = getattr(dialog, 'title', None)
+    try:
+        hash(raw)
+        return raw
+    except Exception:
+        return repr(raw)[:120]
 
 
 def _matches(match, row, index=None):
@@ -278,8 +291,11 @@ def install():
             # Cleared so the original does not add the dynamic rows a second
             # time on top of the list we just wrote.
             self.dynamic_picker_rows_func = None
-        except Exception:
-            pass
+        except Exception as ex:
+            # Recorded, never silent. A swallowed exception here once produced
+            # 'one display, zero dialogs seen' and no way to tell why.
+            _counts['errors'] += 1
+            _last_error[0] = '%r on %r' % (ex, getattr(self, 'title', None))
         try:
             return original(self, *args, **kwargs)
         finally:
@@ -364,4 +380,10 @@ def report_lines():
                      % (title, ', '.join(attrs)))
     if _counts['dynamic_failed']:
         lines.append('   %d dynamic row functions raised' % _counts['dynamic_failed'])
+    if _last_error[0]:
+        lines.append('   LAST ERROR building a dialog: %s' % _last_error[0])
+    if _counts['displays'] and not _observed and not _last_error[0]:
+        lines.append('   %d dialogs were built but none recorded, and nothing '
+                     'raised -- the shape is unexpected in a new way'
+                     % _counts['displays'])
     return lines

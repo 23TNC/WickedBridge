@@ -390,7 +390,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.19.0')
+check('module imports', wickedbridge.VERSION == '0.19.1')
 # The harness used to overwrite the player's live status file, because
 # _candidate_paths tried a hardcoded user folder ahead of expanduser -- so no
 # redirect could get in front of it. A test run once replaced a real dialog
@@ -916,6 +916,30 @@ empty = FakePickerDialog(0xE770)
 empty.display()
 check('a dialog yielding no rows records its shape rather than vanishing',
       0xE770 in dlg._shapes, str(list(dlg._shapes)))
+
+
+class Unhashable(object):
+    """turbolib2 stores the resolved LocalizedString in `title`, not a key,
+    and that object need not be hashable -- using it as a dict key raised and
+    the failure was swallowed."""
+
+    __hash__ = None
+
+    def __repr__(self):
+        return "LocalizedString(body_selector)"
+
+
+unhashable = FakePickerDialog(Unhashable(),
+                              dynamic=lambda state: [FakeRow('tongue')])
+unhashable.display()
+check('an unhashable title does not stop the dialog being recorded',
+      any('body_selector' in str(k) for k in dlg.observed()),
+      str(list(dlg.observed())))
+check('and it was recorded with its rows, not as an empty shape',
+      any(v == ['tongue'] for v in dlg.observed().values()),
+      str(dlg.observed()))
+check('no error was swallowed getting there', dlg._last_error[0] is None,
+      str(dlg._last_error[0]))
 dlg.withdraw(hany)
 
 # The console dismisses the dialog, so the file has to write itself.
