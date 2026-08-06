@@ -325,7 +325,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.16.0')
+check('module imports', wickedbridge.VERSION == '0.17.0')
 check('used turbolib2 zone registration, not the fallback',
       len(ZONE_CALLBACKS) == 1, 'fell back to zone.Zone')
 
@@ -990,6 +990,24 @@ menu.withdraw(bad_handle)
 
 check('a window nobody declared against is untouched',
       (FakeSettingsWindow('other').open(), OPENED[-1] == [])[1])
+menu._removals.clear(); menu._reservations.clear(); menu._upserts.clear()
+w = _window(); w.open()
+h_any = menu.remove(wickedbridge.MENU_ANY_WINDOW, 'advanced', reason='wildcard')
+del OPENED[:]
+w = _window(); w.open()
+check('ANY_WINDOW matches a node without naming its window',
+      OPENED[-1] == ['behaviour', 'fit_to_orientation'], str(OPENED[-1]))
+other = FakeSettingsWindow('some_other_window')
+other.add_element(FakeElement('advanced', setting_identifier='advanced'))
+other.open()
+check('a wildcard removal applies in every window it matches',
+      OPENED[-1] == [], str(OPENED[-1]))
+menu.withdraw(h_any)
+w = _window(); w.open()
+check('withdrawing the wildcard restores it everywhere',
+      OPENED[-1] == ['behaviour', 'advanced', 'fit_to_orientation'])
+menu._removals.clear()
+
 check('menu verbs are on the public surface',
       all(hasattr(wickedbridge, n) for n in
           ('menu_remove', 'menu_reserve', 'menu_upsert', 'menu_withdraw',

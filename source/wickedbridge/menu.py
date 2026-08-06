@@ -166,8 +166,24 @@ def _declare(table, kind, window_id, match, reason):
     return (kind, window_id, match, token)
 
 
+ANY_WINDOW = None
+
+
+def _window_matches(declared, window_id):
+    """ANY_WINDOW (None) matches every window.
+
+    A mod often knows what it wants gone without knowing which screen holds
+    it -- window ids cannot be enumerated offline, so requiring one would mean
+    nothing could be declared until after the player had walked the tree.
+    """
+    return declared is ANY_WINDOW or declared == window_id
+
+
 def remove(window_id, match, reason=None):
-    """Take a node out of a window. Idempotent across mods."""
+    """Take a node out of a window. Idempotent across mods.
+
+    Pass ANY_WINDOW (None) as window_id to match wherever the node appears.
+    """
     return _declare(_removals, 'remove', window_id, match, reason)
 
 
@@ -247,11 +263,14 @@ def _apply(window):
     for position, element in enumerate(base):
         drop = False
         for (wid, match), askers in _removals.items():
-            if wid != window_id or not _matches(match, element, position):
+            if not _window_matches(wid, window_id):
+                continue
+            if not _matches(match, element, position):
                 continue
             # Reserve wins: a single reservation outranks any number of
             # removals, because keeping a node is the recoverable outcome.
-            reserved = any(w == window_id and _matches(m, element, position)
+            reserved = any(_window_matches(w, window_id)
+                           and _matches(m, element, position)
                            for (w, m) in _reservations)
             if reserved:
                 _counts['reserved'] += 1
@@ -265,7 +284,8 @@ def _apply(window):
 
     # Deterministic order: explicit `order`, then owner name. Registration
     # order would make the menu reshuffle with script load order.
-    additions = [(k, spec) for k, spec in _upserts.items() if k[0] == window_id]
+    additions = [(k, spec) for k, spec in _upserts.items()
+                 if _window_matches(k[0], window_id)]
     additions.sort(key=lambda item: (item[1]['order'] is None,
                                      item[1]['order'], item[1]['owner'],
                                      str(item[0][1])))

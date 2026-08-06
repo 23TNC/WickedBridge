@@ -117,6 +117,7 @@ describe_animation = animations.describe
 # The bridge decides none of it -- it only makes both choices expressible and
 # records who asked for what.
 menu_remove = menu.remove
+MENU_ANY_WINDOW = menu.ANY_WINDOW
 menu_reserve = menu.reserve
 menu_upsert = menu.upsert
 menu_withdraw = menu.withdraw

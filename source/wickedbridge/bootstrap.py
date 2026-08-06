@@ -12,7 +12,7 @@ import sys
 from . import (animations, compat, events, gates, menu, roles, satisfaction,
                settings, sex)
 
-VERSION = '0.16.0'
+VERSION = '0.17.0'
 STATUS_FILE = 'WickedBridge_status.txt'
 
 _state = {'imported': True, 'zone_load': 'not yet', 'install': 'not attempted'}
