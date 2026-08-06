@@ -11,7 +11,18 @@ the stub does. That came from disassembling its bytecode, and only a real
 session can confirm it.
 """
 
-import sys, types
+import os, sys, tempfile, types
+
+# Redirect the status file into a temp dir BEFORE importing anything.
+# WickedBridge writes its report at import, at zone load, and now on first
+# sight of a dialog -- straight into the real Sims 4 folder. Without this the
+# harness silently overwrites the player's live diagnostics with fixtures,
+# which is exactly what happened: a run of this file replaced a real dialog
+# observation with fake dialogs 0x4242, 0x9999 and 0xBEEF.
+_TMP = tempfile.mkdtemp(prefix='wickedbridge_test_')
+_real_expanduser = os.path.expanduser
+os.path.expanduser = lambda p: _TMP if p == '~' else _real_expanduser(p)
+os.chdir(_TMP)
 
 PASS, FAIL = [], []
 
@@ -366,7 +377,17 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.18.1')
+check('module imports', wickedbridge.VERSION == '0.18.2')
+# The harness used to overwrite the player's live status file, because
+# _candidate_paths tried a hardcoded user folder ahead of expanduser -- so no
+# redirect could get in front of it. A test run once replaced a real dialog
+# observation with fixtures.
+_paths = bootstrap._candidate_paths('x.txt')
+check('the report writes under the redirected home, not a fixed path',
+      all(_TMP in p or os.getcwd() in p for p in _paths), str(_paths))
+check('the paths derive from home, so this ships to other machines',
+      all(p.startswith(_TMP) or p.startswith(os.getcwd()) for p in _paths),
+      str(_paths))
 check('used turbolib2 zone registration, not the fallback',
       len(ZONE_CALLBACKS) == 1, 'fell back to zone.Zone')
 

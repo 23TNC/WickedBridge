@@ -12,7 +12,7 @@ import sys
 from . import (animations, compat, dialogs, events, gates, menu, roles,
                satisfaction, settings, sex)
 
-VERSION = '0.18.1'
+VERSION = '0.18.2'
 STATUS_FILE = 'WickedBridge_status.txt'
 
 _state = {'imported': True, 'zone_load': 'not yet', 'install': 'not attempted'}
@@ -22,16 +22,20 @@ _state = {'imported': True, 'zone_load': 'not yet', 'install': 'not attempted'}
 # reporting
 # --------------------------------------------------------------------------
 def _candidate_paths(filename):
+    """Where to write the status file, best first.
+
+    This used to try one hardcoded Windows user folder before anything else,
+    which was wrong twice over: it would write into one particular person's
+    directory on every other machine, and it made the offline harness clobber
+    the real diagnostics because no redirect could get ahead of it.
+    """
     import os
     paths = []
-    base = 'C:' + os.sep + os.path.join('Users', 'Wolf', 'Documents',
-                                        'Electronic Arts', 'The Sims 4')
-    paths.append(os.path.join(base, filename))
-    paths.append(os.path.join(base, 'Mods', filename))
     try:
-        home = os.path.expanduser('~')
-        paths.append(os.path.join(home, 'Documents', 'Electronic Arts',
-                                  'The Sims 4', filename))
+        base = os.path.join(os.path.expanduser('~'), 'Documents',
+                            'Electronic Arts', 'The Sims 4')
+        paths.append(os.path.join(base, filename))
+        paths.append(os.path.join(base, 'Mods', filename))
     except Exception:
         pass
     try:
