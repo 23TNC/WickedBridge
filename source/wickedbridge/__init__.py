@@ -124,6 +124,19 @@ menu_classes = menu.classes
 menu_observed = menu.observed
 menu_mutations = menu.mutations
 
+# --- WickedWhims settings, read and write ---------------------------------
+# lock() makes WickedWhims report a value of your choosing. Two mods locking
+# the same value coalesce; two locking different values BOTH defer, the
+# player's own setting stands, and the conflict is named in the status file --
+# the bridge does not pick a winner it was never given authority to pick.
+settings_get = settings.get
+settings_names = settings.names
+settings_lock = settings.lock
+settings_unlock = settings.unlock
+settings_is_locked = settings.is_locked
+settings_locks = settings.locks
+settings_conflicts = settings.conflicts
+
 # --- queries --------------------------------------------------------------
 active = sex.active
 

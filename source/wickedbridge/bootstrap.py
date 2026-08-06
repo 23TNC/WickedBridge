@@ -12,7 +12,7 @@ import sys
 from . import (animations, compat, events, gates, menu, roles, satisfaction,
                settings, sex)
 
-VERSION = '0.15.0'
+VERSION = '0.16.0'
 STATUS_FILE = 'WickedBridge_status.txt'
 
 _state = {'imported': True, 'zone_load': 'not yet', 'install': 'not attempted'}
@@ -113,6 +113,7 @@ def install():
     satisfaction.install()
     roles.install()
     animations.install()
+    settings.install()
     menu.install()
     if ok and lifecycle:
         _state['install'] = 'ok'

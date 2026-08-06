@@ -133,8 +133,20 @@ def register_on_game_update_method(unique_id=None, interval=None):
 ticksvc_mod.register_on_game_update_method = register_on_game_update_method
 
 setsex_mod = make_module('wickedwhims.sex.sex_settings')
-setsex_mod.SexSetting = type('SexSetting', (), {'CUM_SWITCH_STATE': 'k1'})
-setsex_mod.get_sex_setting = lambda member: 'ON' if member == 'k1' else None
+setsex_mod.SexSetting = type('SexSetting', (), {'CUM_SWITCH_STATE': 'k1',
+                                                'SEX_GENDER_TYPE': 'k2'})
+PLAYER_SETTINGS = {'k1': 'ON', 'k2': 'SEX_BASED'}
+setsex_mod.get_sex_setting = lambda member: PLAYER_SETTINGS.get(member)
+# a module that grabbed the getter by `from ... import` before we installed
+setting_importer = make_module('wickedwhims.fake_setting_caller')
+setting_importer.get_sex_setting = setsex_mod.get_sex_setting
+
+setnud_mod = make_module('wickedwhims.nudity.nudity_settings')
+setnud_mod.NuditySetting = type('NuditySetting', (), {'NUDITY_SWITCH_STATE': 'n1'})
+setnud_mod.get_nudity_setting = lambda member: 'NUDE'
+setrel_mod = make_module('wickedwhims.relationships.relationship_settings')
+setrel_mod.RelationshipSetting = type('RelationshipSetting', (), {'JEALOUSY': 'r1'})
+setrel_mod.get_relationship_setting = lambda member: 'ON'
 
 SATIS = ('wickedwhims.sex.integral.sex_handlers.active_sex.sex_actions'
          '.actions.satisfaction.satisfaction_levels')
@@ -313,7 +325,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.15.0')
+check('module imports', wickedbridge.VERSION == '0.16.0')
 check('used turbolib2 zone registration, not the fallback',
       len(ZONE_CALLBACKS) == 1, 'fell back to zone.Zone')
 
@@ -756,6 +768,58 @@ check('without_male_role maps one gender, without a constant',
 check('the helpers need no SexGenderType constant from the caller',
       wickedbridge.is_male_role(MALE) and not wickedbridge.is_male_role(FEMALE)
       and wickedbridge.opposite_role(MALE) == FEMALE)
+
+print('--- settings write ---')
+from wickedbridge import settings as _set
+check('all three setting domains wrapped', len(_set._installed) == 3,
+      str(_set._installed))
+check('wrapper reached the importing module too',
+      setting_importer.get_sex_setting is setsex_mod.get_sex_setting)
+check('an unlocked setting reports the player value',
+      wickedbridge.settings_get('sex', 'SEX_GENDER_TYPE') == 'SEX_BASED')
+
+h1 = wickedbridge.settings_lock('sex', 'SEX_GENDER_TYPE', 'ANY_BASED',
+                                reason='bypass WW gender matching')
+check('a locked setting reports the locked value',
+      wickedbridge.settings_get('sex', 'SEX_GENDER_TYPE') == 'ANY_BASED')
+check("WickedWhims' own callers see it too, not just our reader",
+      setsex_mod.get_sex_setting('k2') == 'ANY_BASED')
+check('an unrelated setting is untouched',
+      setsex_mod.get_sex_setting('k1') == 'ON')
+
+h2 = wickedbridge.settings_lock('sex', 'SEX_GENDER_TYPE', 'ANY_BASED')
+check('two mods wanting the SAME value coalesce, no conflict',
+      wickedbridge.settings_conflicts() == {}
+      and setsex_mod.get_sex_setting('k2') == 'ANY_BASED')
+
+h3 = wickedbridge.settings_lock('sex', 'SEX_GENDER_TYPE', 'GENDER_BASED')
+check('disagreement means NEITHER applies -- the player setting stands',
+      setsex_mod.get_sex_setting('k2') == 'SEX_BASED',
+      str(setsex_mod.get_sex_setting('k2')))
+check('the conflict is reported with both claimants and their values',
+      ('sex', 'SEX_GENDER_TYPE') in wickedbridge.settings_conflicts(),
+      str(wickedbridge.settings_conflicts()))
+check('is_locked reports CONFLICT rather than a value',
+      wickedbridge.settings_is_locked('sex', 'SEX_GENDER_TYPE') is _set.CONFLICT)
+
+wickedbridge.settings_unlock(h3)
+check('withdrawing the dissenter restores the agreed lock',
+      setsex_mod.get_sex_setting('k2') == 'ANY_BASED'
+      and wickedbridge.settings_conflicts() == {})
+check('unlocking one holder leaves the other mod lock standing',
+      wickedbridge.settings_unlock(h2)
+      and setsex_mod.get_sex_setting('k2') == 'ANY_BASED')
+check('unlocking the last holder restores the player value',
+      wickedbridge.settings_unlock(h1)
+      and setsex_mod.get_sex_setting('k2') == 'SEX_BASED')
+check('unlocking a spent handle is not a second unlock',
+      wickedbridge.settings_unlock(h1) is False)
+
+check('other domains lock too',
+      wickedbridge.settings_lock('nudity', 'NUDITY_SWITCH_STATE', 'OFF')
+      and setnud_mod.get_nudity_setting('n1') == 'OFF')
+check('an unknown domain is refused rather than silently ignored',
+      wickedbridge.settings_lock('nonsense', 'X', 1) is None)
 
 print('--- animation gating ---')
 from wickedbridge import animations as anims

@@ -81,6 +81,14 @@ REQUIRED = (
     # and it takes the Sims and returns the animations, which is why it is the
     # right place to judge eligibility rather than the gender channel.
     ('get_available_animations',  M_ANIMS,   'get_available_animations',  False),
+    # settings accessors -- wrapped so a mod can LOCK a value. Rebound rather
+    # than called through, because WickedWhims does `from x import
+    # get_sex_setting` in dozens of modules and each holds its own reference.
+    ('get_sex_setting',   'wickedwhims.sex.sex_settings', 'get_sex_setting', False),
+    ('get_nudity_setting', 'wickedwhims.nudity.nudity_settings',
+     'get_nudity_setting', False),
+    ('get_relationship_setting', 'wickedwhims.relationships.relationship_settings',
+     'get_relationship_setting', False),
     ('is_condom_applicable_for_sim', M_CONDOMS, 'is_condom_applicable_for_sim', False),
     ('is_birth_control_pill_applicable_for_sim', M_PILLS,
      'is_birth_control_pill_applicable_for_sim', False),
