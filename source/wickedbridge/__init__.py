@@ -26,8 +26,8 @@ and again at zone load, because a script mod that fails to load is otherwise
 completely silent.
 """
 
-from . import (animations, bootstrap, compat, events, gates, menu, roles,
-               satisfaction, satisfaction_model, settings, sex)
+from . import (animations, bootstrap, compat, dialogs, events, gates, menu,
+               roles, satisfaction, satisfaction_model, settings, sex)
 
 VERSION = bootstrap.VERSION
 
@@ -137,6 +137,19 @@ settings_unlock = settings.unlock
 settings_is_locked = settings.is_locked
 settings_locks = settings.locks
 settings_conflicts = settings.conflicts
+
+# --- WickedWhims' picker dialogs ------------------------------------------
+# The other UI family: the body selector, animation pickers, sim pickers,
+# playlists. Same set arithmetic as the settings menus, and easier -- rows
+# carry their own identity and dispatch is by identifier, not list index.
+dialog_remove = dialogs.remove
+dialog_reserve = dialogs.reserve
+dialog_upsert = dialogs.upsert
+dialog_withdraw = dialogs.withdraw
+dialog_observed = dialogs.observed
+dialog_mutations = dialogs.mutations
+dialog_row_classes = dialogs.row_classes
+DIALOG_ANY = dialogs.ANY_DIALOG
 
 # --- queries --------------------------------------------------------------
 active = sex.active

@@ -28,6 +28,7 @@ M_SIMS = 'wickedwhims.sex.generic.utils.sims'
 M_GENDER = 'wickedwhims.sex.enums.sex_gender'
 M_SETTINGS_UI = 'wickedwhims.main.settings.settings_builder'
 M_ANIMS = 'wickedwhims.sex.animations.animations_operator'
+M_PICKER = 'turbolib2.ui.object_picker_dialog'
 M_CONDOMS = 'wickedwhims.sex.pregnancy.birth_control.condoms'
 M_PILLS = 'wickedwhims.sex.pregnancy.birth_control.pills'
 M_SATIS = ('wickedwhims.sex.integral.sex_handlers.active_sex.sex_actions'
@@ -81,6 +82,11 @@ REQUIRED = (
     # and it takes the Sims and returns the animations, which is why it is the
     # right place to judge eligibility rather than the gender channel.
     ('get_available_animations',  M_ANIMS,   'get_available_animations',  False),
+    # The other UI family. display() runs after every row is added, which is
+    # what makes it the analogue of SettingsWindow.open.
+    ('TurboObjectPickerDialog', M_PICKER, 'TurboObjectPickerDialog', False),
+    ('TurboObjectPickerRow',    M_PICKER, 'TurboObjectPickerRow',    False),
+    ('TurboPickerCategory',     M_PICKER, 'TurboPickerCategory',     False),
     # settings accessors -- wrapped so a mod can LOCK a value. Rebound rather
     # than called through, because WickedWhims does `from x import
     # get_sex_setting` in dozens of modules and each holds its own reference.

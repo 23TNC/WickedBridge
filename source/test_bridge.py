@@ -301,6 +301,47 @@ anims_mod.get_available_animations = get_available_animations
 anim_importer = make_module('wickedwhims.fake_anim_caller')
 anim_importer.get_available_animations = anims_mod.get_available_animations
 
+# The other UI family: picker dialogs. display() runs after every row is
+# added, with the whole set in hand.
+DISPLAYED = []
+
+
+class FakeRow(object):
+    def __init__(self, identifier, name=None):
+        self._id = identifier
+        self._name = name or str(identifier)
+
+    def get_identifier(self):
+        return self._id
+
+    def get_name(self):
+        return self._name
+
+
+class FakePickerDialog(object):
+    def __init__(self, title):
+        self.title = title
+        self.picker_rows = {}
+
+    def add_picker_row(self, state, *rows):
+        self.picker_rows.setdefault(state, []).extend(rows)
+
+    def display(self, client_sim=None):
+        DISPLAYED.append([r.get_identifier()
+                          for r in self.picker_rows.get(0, [])])
+        return 'shown'
+
+
+class FakePickerCategory(object):
+    def __init__(self, name, icon=None, tag=None):
+        self.name = name
+
+
+picker_mod = make_module('turbolib2.ui.object_picker_dialog')
+picker_mod.TurboObjectPickerDialog = FakePickerDialog
+picker_mod.TurboObjectPickerRow = FakeRow
+picker_mod.TurboPickerCategory = FakePickerCategory
+
 zone_mod = make_module('turbolib2.events.zone_spin')
 
 
@@ -325,7 +366,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.17.0')
+check('module imports', wickedbridge.VERSION == '0.18.0')
 check('used turbolib2 zone registration, not the fallback',
       len(ZONE_CALLBACKS) == 1, 'fell back to zone.Zone')
 
@@ -768,6 +809,77 @@ check('without_male_role maps one gender, without a constant',
 check('the helpers need no SexGenderType constant from the caller',
       wickedbridge.is_male_role(MALE) and not wickedbridge.is_male_role(FEMALE)
       and wickedbridge.opposite_role(MALE) == FEMALE)
+
+print('--- picker dialogs ---')
+from wickedbridge import dialogs as dlg
+check('dialog hook installed', dlg._installed == ['dialogs'], str(dlg._installed))
+
+
+def _body_dialog():
+    d = FakePickerDialog(0x4242)
+    d.add_picker_row(0, FakeRow('penis_soft'), FakeRow('penis_hard'),
+                     FakeRow('body_top'), FakeRow('feet'))
+    return d
+
+
+del DISPLAYED[:]
+_body_dialog().display()
+check('an untouched dialog shows every row',
+      DISPLAYED[-1] == ['penis_soft', 'penis_hard', 'body_top', 'feet'])
+check('the dialog and its rows were observed for discovery',
+      dlg.observed().get(0x4242) == ['penis_soft', 'penis_hard', 'body_top', 'feet'],
+      str(dlg.observed()))
+
+h = dlg.remove(0x4242, 'feet', reason='test')
+_body_dialog().display()
+check('a row can be removed by its identifier',
+      DISPLAYED[-1] == ['penis_soft', 'penis_hard', 'body_top'])
+
+hr = dlg.reserve(0x4242, 'feet')
+_body_dialog().display()
+check('reserve outranks remove here too', 'feet' in DISPLAYED[-1])
+dlg.withdraw(hr)
+
+dlg.upsert(0x4242, lambda d, state: FakeRow('has_penis'), key='hp')
+dlg.upsert(0x4242, lambda d, state: FakeRow('has_vagina'), key='hv')
+_body_dialog().display()
+check('rows can be added, and several mods union rather than clobber',
+      DISPLAYED[-1] == ['penis_soft', 'penis_hard', 'body_top',
+                        'has_penis', 'has_vagina'], str(DISPLAYED[-1]))
+
+first = list(DISPLAYED[-1])
+_body_dialog().display()
+check('reopening does not compound edits', DISPLAYED[-1] == first)
+
+dlg.upsert(0x4242, lambda d, state: 1 / 0, key='bad')
+_body_dialog().display()
+check('a throwing factory is counted, not raised',
+      dlg._counts['failed'] >= 1 and 'penis_soft' in DISPLAYED[-1])
+dlg.withdraw(('upsert', 0x4242, 'bad'))
+
+other = FakePickerDialog(0x9999)
+other.add_picker_row(0, FakeRow('feet'))
+other.display()
+check('a dialog nobody declared against is untouched',
+      DISPLAYED[-1] == ['feet'])
+
+hany = dlg.remove(wickedbridge.DIALOG_ANY, 'feet')
+other = FakePickerDialog(0x9999)
+other.add_picker_row(0, FakeRow('feet'))
+other.display()
+check('DIALOG_ANY reaches a dialog whose title we never knew',
+      DISPLAYED[-1] == [])
+dlg.withdraw(hany)
+
+check('a row with no identity never matches None',
+      dlg._matches(None, FakeRow(None)) is False)
+check('row_classes exposes turbolib2 constructors',
+      'TurboObjectPickerRow' in wickedbridge.dialog_row_classes())
+check('dialog verbs are on the public surface',
+      all(hasattr(wickedbridge, n) for n in
+          ('dialog_remove', 'dialog_reserve', 'dialog_upsert',
+           'dialog_withdraw', 'dialog_observed', 'DIALOG_ANY')))
+dlg._removals.clear(); dlg._upserts.clear()
 
 print('--- settings write ---')
 from wickedbridge import settings as _set
