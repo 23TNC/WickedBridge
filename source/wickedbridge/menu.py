@@ -72,27 +72,64 @@ _installed = []
 # identity
 # --------------------------------------------------------------------------
 def element_key(element):
-    """A stable handle for one element.
+    """A stable handle for one element, or None if it has none.
 
-    `setting_identifier` when the element has one, else `option_name` -- which
-    is a localised-string KEY, not display text, so it does not shift with the
-    player's language.
+    Tried in order:
+
+      setting_identifier   a real setting -- the best handle there is
+      the callback name    a branch or custom element carries the function
+                           that opens it, and that name comes from
+                           WickedWhims' source, so it survives restarts
+      option_name          a localised-string key, language-stable
+
+    None means this element cannot be addressed by key, which callers MUST
+    handle: matching on None once removed every unkeyed element in a window
+    at once, because they all compared equal.
     """
-    for attr in ('setting_identifier', 'option_name'):
-        value = getattr(element, attr, None)
-        if value is not None:
-            return value
+    value = getattr(element, 'setting_identifier', None)
+    if value is not None:
+        return value
+    for attr in ('branch_window_callback', 'custom_callback',
+                 'settings_window_callback', 'modification_callback'):
+        callback = getattr(element, attr, None)
+        if callback is None:
+            continue
+        name = getattr(callback, '__name__', None)
+        if name is None:
+            name = getattr(getattr(callback, '__func__', None), '__name__', None)
+        if name:
+            return 'callback:%s' % name
+    value = getattr(element, 'option_name', None)
+    if value is not None:
+        return value
     return None
 
 
-def _matches(match, element):
-    """`match` is an element key, or a predicate over the element."""
+def element_kind(element):
+    return type(element).__name__
+
+
+def _matches(match, element, index=None):
+    """Does this element answer to `match`?
+
+    `match` is an element key, a ('#', position) pair, or a predicate.
+
+    A None key never matches anything. Several elements in one window can lack
+    a key, and treating None as a value made them all compare equal -- so
+    removing one unkeyed branch stripped every unkeyed element in that window.
+    Address those positionally instead.
+    """
     if callable(match):
         try:
             return bool(match(element))
         except Exception:
             return False
-    return element_key(element) == match
+    if isinstance(match, tuple) and len(match) == 2 and match[0] == '#':
+        return index == match[1]
+    if match is None:
+        return False
+    key = element_key(element)
+    return key is not None and key == match
 
 
 def _owner(depth=2):
@@ -195,14 +232,14 @@ def _apply(window):
     _bases[window_id] = base
 
     kept = []
-    for element in base:
+    for position, element in enumerate(base):
         drop = False
         for (wid, match), askers in _removals.items():
-            if wid != window_id or not _matches(match, element):
+            if wid != window_id or not _matches(match, element, position):
                 continue
             # Reserve wins: a single reservation outranks any number of
             # removals, because keeping a node is the recoverable outcome.
-            reserved = any(w == window_id and _matches(m, element)
+            reserved = any(w == window_id and _matches(m, element, position)
                            for (w, m) in _reservations)
             if reserved:
                 _counts['reserved'] += 1
@@ -294,10 +331,22 @@ def listing():
     lines = []
     index = {}
     for w, window_id in enumerate(sorted(_observed, key=lambda k: str(k))):
-        lines.append('[%d] window %r' % (w, window_id))
+        elements = _bases.get(window_id, ())
+        lines.append('[%d] window %r  (%d elements)'
+                     % (w, window_id, len(_observed[window_id])))
+        seen = {}
         for e, key in enumerate(_observed[window_id]):
-            index['%d.%d' % (w, e)] = (window_id, key, e)
-            lines.append('       [%d.%d] %r' % (w, e, key))
+            kind = element_kind(elements[e]) if e < len(elements) else '?'
+            # An element with no key, or one sharing a key with another, can
+            # only be addressed by position -- so hand out the positional
+            # match for those rather than a key that would hit both.
+            unique = key is not None and _observed[window_id].count(key) == 1
+            match = key if unique else ('#', e)
+            index['%d.%d' % (w, e)] = (window_id, match, e)
+            lines.append('       [%d.%d] %-28s %s%s'
+                         % (w, e, kind, repr(key),
+                            '' if unique else '   <- addressed by position'))
+            seen[key] = seen.get(key, 0) + 1
     return lines, index
 
 

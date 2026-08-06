@@ -177,6 +177,22 @@ gender_importer.get_sim_sex_genders = gender_mod.get_sim_sex_genders
 OPENED = []
 
 
+class FakeBranch(object):
+    """A branch row: no setting_identifier, like WickedWhims' own."""
+    def __init__(self, name, callback_name=None):
+        self.option_name = None
+        self.selected = 0
+        if callback_name:
+            def cb():
+                return name
+            cb.__name__ = callback_name
+            self.branch_window_callback = cb
+
+    def _select(self):
+        self.selected += 1
+        return 'branch'
+
+
 class FakeElement(object):
     def __init__(self, name, setting_identifier=None):
         self.option_name = name
@@ -240,7 +256,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.12.0')
+check('module imports', wickedbridge.VERSION == '0.13.0')
 check('used turbolib2 zone registration, not the fallback',
       len(ZONE_CALLBACKS) == 1, 'fell back to zone.Zone')
 
@@ -785,6 +801,52 @@ check('the same listing reaches the status report, so it can be read from disk',
       all(line in report for line in lines), report)
 check('window ids are rendered with repr, so their type is visible',
       "'gender_recognition'" in report, report)
+
+# The bug from the first live run: several branch rows carry no
+# setting_identifier, element_key returned None for all of them, and removing
+# one None-keyed element stripped every other one in the window.
+print('--- unkeyed elements ---')
+menu._removals.clear(); menu._reservations.clear(); menu._upserts.clear()
+menu._observed.clear(); menu._bases.clear()
+
+
+def _mixed():
+    w = FakeSettingsWindow('sex_interaction')
+    w.add_element(FakeElement('teen_sex', setting_identifier='teen_sex'))
+    w.add_element(FakeBranch('gender_recognition', 'open_gender_recognition'))
+    w.add_element(FakeBranch('nameless_a'))
+    w.add_element(FakeBranch('nameless_b'))
+    return w
+
+
+del OPENED[:]
+w = _mixed(); w.open()
+check('a window of mostly unkeyed rows opens intact', len(OPENED[-1]) == 4)
+check('element_key never matches None against an unkeyed element',
+      menu._matches(None, FakeBranch('x')) is False)
+
+_lines, idx = menu.listing()
+check('a branch is keyed by the callback that opens it',
+      idx['0.1'][1] == 'callback:open_gender_recognition', str(idx['0.1']))
+check('rows with no key at all are handed a positional match',
+      idx['0.2'][1] == ('#', 2) and idx['0.3'][1] == ('#', 3), str(idx))
+
+window_id, match, _i = idx['0.2']
+menu.remove(window_id, match)
+w = _mixed(); w.open()
+check('removing one unkeyed row removes exactly one -- not every unkeyed row',
+      len(OPENED[-1]) == 3, str(OPENED[-1]))
+
+menu._removals.clear()
+window_id, match, _i = idx['0.1']
+menu.remove(window_id, match)
+w = _mixed(); w.open()
+check('removing a branch by its callback name removes only that branch',
+      len(OPENED[-1]) == 3, str(OPENED[-1]))
+w = _mixed(); rows = w.open()
+check('indices still dispatch correctly after an unkeyed removal',
+      all(w._window_callback(i) is not None for i, _e in rows))
+menu._removals.clear()
 
 print()
 print('%d passed, %d failed' % (len(PASS), len(FAIL)))
