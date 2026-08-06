@@ -213,7 +213,19 @@ def _apply(dialog):
                 _counts['added'] += 1
         rows_by_state[state] = kept
 
+    # Writing the report the first time a dialog is seen removes a step that
+    # is genuinely awkward in game: opening the cheat console dismisses the
+    # dialog, so a player cannot look at one and ask about it at the same
+    # time. Observation persists past the close, but only if something wrote
+    # it down.
+    fresh = title not in _observed
     _observed[title] = seen
+    if fresh:
+        try:
+            from . import bootstrap
+            bootstrap.write_report()
+        except Exception:
+            pass
 
 
 def install():

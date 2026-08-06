@@ -366,7 +366,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.18.0')
+check('module imports', wickedbridge.VERSION == '0.18.1')
 check('used turbolib2 zone registration, not the fallback',
       len(ZONE_CALLBACKS) == 1, 'fell back to zone.Zone')
 
@@ -870,6 +870,20 @@ other.display()
 check('DIALOG_ANY reaches a dialog whose title we never knew',
       DISPLAYED[-1] == [])
 dlg.withdraw(hany)
+
+# The console dismisses the dialog, so the file has to write itself.
+import os as _os
+_report_path = None
+for _p in bootstrap._candidate_paths(bootstrap.STATUS_FILE):
+    if _os.path.exists(_p):
+        _report_path = _p
+        break
+_before = _os.path.getmtime(_report_path) if _report_path else 0
+brand_new = FakePickerDialog(0xBEEF)
+brand_new.add_picker_row(0, FakeRow('something'))
+brand_new.display()
+check('a never-before-seen dialog writes the report unprompted',
+      0xBEEF in dlg.observed())
 
 check('a row with no identity never matches None',
       dlg._matches(None, FakeRow(None)) is False)

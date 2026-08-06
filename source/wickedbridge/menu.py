@@ -256,8 +256,17 @@ def _apply(window):
         base = list(getattr(window, 'elements', []))
         window._wickedbridge_base = base
 
+    fresh = window_id not in _observed
     _observed[window_id] = [element_key(e) for e in base]
     _bases[window_id] = base
+    if fresh:
+        # Same reason as the dialogs: the console cannot be open at the same
+        # time as the thing you want to ask about.
+        try:
+            from . import bootstrap
+            bootstrap.write_report()
+        except Exception:
+            pass
 
     kept = []
     for position, element in enumerate(base):
