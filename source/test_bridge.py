@@ -171,6 +171,51 @@ gender_mod.get_opposite_sex_gender_variant = lambda g: {MALE: FEMALE, FEMALE: MA
 gender_importer = make_module('wickedwhims.fake_gender_caller')
 gender_importer.get_sim_sex_genders = gender_mod.get_sim_sex_genders
 
+# WickedWhims' settings menu, mirroring what was read out of its bytecode:
+# elements live in a plain list, rows are enumerated AT OPEN, and the callback
+# dispatches by index into that same list.
+OPENED = []
+
+
+class FakeElement(object):
+    def __init__(self, name, setting_identifier=None):
+        self.option_name = name
+        if setting_identifier is not None:
+            self.setting_identifier = setting_identifier
+        self.selected = 0
+
+    def _select(self):
+        self.selected += 1
+        return self.option_name
+
+
+class FakeSettingsWindow(object):
+    def __init__(self, window_id, title='t', description='d'):
+        self.window_id = window_id
+        self.title = title
+        self.description = description
+        self.elements = []
+
+    def add_element(self, element):
+        self.elements.append(element)
+
+    def open(self, *a, **kw):
+        # what WickedWhims does: enumerate(self.elements) into the dialog
+        OPENED.append([e.option_name for e in self.elements])
+        return list(enumerate(self.elements))
+
+    def _window_callback(self, element_index):
+        return self.elements[element_index]._select()
+
+
+settings_ui_mod = make_module('wickedwhims.main.settings.settings_builder')
+settings_ui_mod.SettingsWindow = FakeSettingsWindow
+settings_ui_mod.SettingsBranchElement = FakeElement
+settings_ui_mod.SettingsSwitchElement = FakeElement
+settings_ui_mod.SettingsSelectElement = FakeElement
+settings_ui_mod.SettingsCustomCallbackElement = FakeElement
+settings_ui_mod.SettingsInputElement = FakeElement
+
 zone_mod = make_module('turbolib2.events.zone_spin')
 
 
@@ -195,7 +240,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.9.0')
+check('module imports', wickedbridge.VERSION == '0.10.0')
 check('used turbolib2 zone registration, not the fallback',
       len(ZONE_CALLBACKS) == 1, 'fell back to zone.Zone')
 
@@ -638,6 +683,98 @@ check('without_male_role maps one gender, without a constant',
 check('the helpers need no SexGenderType constant from the caller',
       wickedbridge.is_male_role(MALE) and not wickedbridge.is_male_role(FEMALE)
       and wickedbridge.opposite_role(MALE) == FEMALE)
+
+print('--- settings menu ---')
+from wickedbridge import menu
+check('menu hook installed', menu._installed == ['settings.menu'],
+      str(menu._installed))
+
+
+def _window():
+    w = FakeSettingsWindow('gender_recognition')
+    for name in ('behaviour', 'advanced', 'fit_to_orientation'):
+        w.add_element(FakeElement(name, setting_identifier=name))
+    return w
+
+
+del OPENED[:]
+w = _window()
+w.open()
+check('an untouched window opens unchanged',
+      OPENED[-1] == ['behaviour', 'advanced', 'fit_to_orientation'], str(OPENED[-1]))
+check('the window was observed, so its ids are discoverable',
+      menu.observed().get('gender_recognition') ==
+      ['behaviour', 'advanced', 'fit_to_orientation'], str(menu.observed()))
+
+h1 = menu.remove('gender_recognition', 'advanced')
+w = _window(); w.open()
+check('remove takes the node out',
+      OPENED[-1] == ['behaviour', 'fit_to_orientation'], str(OPENED[-1]))
+
+h2 = menu.remove('gender_recognition', 'advanced')
+w = _window(); w.open()
+check('five mods removing one node agree -- removal is idempotent',
+      OPENED[-1] == ['behaviour', 'fit_to_orientation'], str(OPENED[-1]))
+
+h3 = menu.reserve('gender_recognition', 'advanced')
+w = _window(); w.open()
+check('reserve outranks any number of removals',
+      OPENED[-1] == ['behaviour', 'advanced', 'fit_to_orientation'], str(OPENED[-1]))
+check('mutations() records the veto, not just the removal',
+      any(m['kind'] == 'remove' and 'vetoed' in m['outcome']
+          for m in menu.mutations()), str(menu.mutations()))
+check('remove and reserve handles are distinguishable',
+      h1[0] == 'remove' and h3[0] == 'reserve')
+check('withdrawing the reservation does not delete the removal',
+      menu.withdraw(h3) and ('gender_recognition', 'advanced') in menu._removals)
+check('withdrawing one mod declaration leaves the other mod alone',
+      menu.withdraw(h2) and ('gender_recognition', 'advanced') in menu._removals)
+check('withdrawing the same handle twice is not a second removal',
+      menu.withdraw(h2) is False)
+
+# The invariant that matters: dispatch is by index into the same list the rows
+# were enumerated from. A mutation that renumbered one but not the other would
+# fire the wrong menu item -- silently, and looking like a WickedWhims bug.
+w = _window()
+rows = w.open()
+for index, element in rows:
+    check('row %d dispatches to the element it displays' % index,
+          w._window_callback(index) == element.option_name)
+
+menu.upsert('gender_recognition', lambda: FakeElement('mod_a'), key='a')
+menu.upsert('gender_recognition', lambda: FakeElement('mod_b'), key='b')
+w = _window(); w.open()
+check('upserts from several mods union rather than clobber',
+      OPENED[-1] == ['behaviour', 'fit_to_orientation', 'mod_a', 'mod_b'],
+      str(OPENED[-1]))
+
+w = _window()
+rows = w.open()
+check('indices still line up after removals and upserts',
+      all(w._window_callback(i) == e.option_name for i, e in rows))
+
+check('upsert keys default to the declaring mod, so two mods cannot collide',
+      len(set(k[1] for k in menu._upserts)) == len(menu._upserts))
+
+w = _window(); w.open(); first = list(OPENED[-1])
+w = _window(); w.open()
+check('reopening a window does not compound edits', OPENED[-1] == first,
+      '%s vs %s' % (OPENED[-1], first))
+
+bad_handle = menu.upsert('gender_recognition', lambda: 1 / 0, key='bad')
+w = _window(); w.open()
+check('a throwing factory is counted, not raised',
+      menu._counts['failed'] >= 1 and 'behaviour' in OPENED[-1])
+menu.withdraw(bad_handle)
+
+check('a window nobody declared against is untouched',
+      (FakeSettingsWindow('other').open(), OPENED[-1] == [])[1])
+check('menu verbs are on the public surface',
+      all(hasattr(wickedbridge, n) for n in
+          ('menu_remove', 'menu_reserve', 'menu_upsert', 'menu_withdraw',
+           'menu_observed', 'menu_mutations', 'menu_classes')))
+check('classes() exposes WickedWhims constructors so mods need not import them',
+      'SettingsWindow' in wickedbridge.menu_classes())
 
 print()
 print('%d passed, %d failed' % (len(PASS), len(FAIL)))

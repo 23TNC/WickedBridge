@@ -26,7 +26,7 @@ and again at zone load, because a script mod that fails to load is otherwise
 completely silent.
 """
 
-from . import (bootstrap, compat, events, gates, roles, satisfaction,
+from . import (bootstrap, compat, events, gates, menu, roles, satisfaction,
                satisfaction_model, settings, sex)
 
 VERSION = bootstrap.VERSION
@@ -96,6 +96,21 @@ satisfaction_keys = satisfaction_model.keys
 register_satisfaction_key = satisfaction_model.register_key
 
 GATES = tuple(g[0] for g in gates.GATES) + (satisfaction.EV_ALLOWED,)
+
+# --- WickedWhims' settings menus ------------------------------------------
+# Set arithmetic, so the result does not depend on script load order:
+#     shown = (base - (removals - reservations)) + upserts
+# remove is idempotent, reserve outranks remove, and upserts are namespaced to
+# the declaring mod so several mods adding to one window produce a union.
+# The bridge decides none of it -- it only makes both choices expressible and
+# records who asked for what.
+menu_remove = menu.remove
+menu_reserve = menu.reserve
+menu_upsert = menu.upsert
+menu_withdraw = menu.withdraw
+menu_classes = menu.classes
+menu_observed = menu.observed
+menu_mutations = menu.mutations
 
 # --- queries --------------------------------------------------------------
 active = sex.active

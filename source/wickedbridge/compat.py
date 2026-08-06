@@ -26,6 +26,7 @@ M_TICKSVC = 'wickedwhims.main.game_handlers.tick_handler'
 M_LOGGER = 'wickedwhims.debug.logger'
 M_SIMS = 'wickedwhims.sex.generic.utils.sims'
 M_GENDER = 'wickedwhims.sex.enums.sex_gender'
+M_SETTINGS_UI = 'wickedwhims.main.settings.settings_builder'
 M_CONDOMS = 'wickedwhims.sex.pregnancy.birth_control.condoms'
 M_PILLS = 'wickedwhims.sex.pregnancy.birth_control.pills'
 M_SATIS = ('wickedwhims.sex.integral.sex_handlers.active_sex.sex_actions'
@@ -64,6 +65,16 @@ REQUIRED = (
     ('is_male_sex_gender',       M_GENDER,   'is_male_sex_gender',       False),
     ('is_female_sex_gender',     M_GENDER,   'is_female_sex_gender',     False),
     ('opposite_sex_gender',      M_GENDER,   'get_opposite_sex_gender_variant', False),
+    # settings menu construction. SettingsWindow.open enumerates its element
+    # list at open time and dispatches by index, so mutating the list on the
+    # way in is safe and mutating it later is not.
+    ('SettingsWindow',           M_SETTINGS_UI, 'SettingsWindow',           False),
+    ('SettingsBranchElement',    M_SETTINGS_UI, 'SettingsBranchElement',    False),
+    ('SettingsSwitchElement',    M_SETTINGS_UI, 'SettingsSwitchElement',    False),
+    ('SettingsSelectElement',    M_SETTINGS_UI, 'SettingsSelectElement',    False),
+    ('SettingsCustomCallbackElement', M_SETTINGS_UI,
+     'SettingsCustomCallbackElement', False),
+    ('SettingsInputElement',     M_SETTINGS_UI, 'SettingsInputElement',     False),
     ('is_condom_applicable_for_sim', M_CONDOMS, 'is_condom_applicable_for_sim', False),
     ('is_birth_control_pill_applicable_for_sim', M_PILLS,
      'is_birth_control_pill_applicable_for_sim', False),
