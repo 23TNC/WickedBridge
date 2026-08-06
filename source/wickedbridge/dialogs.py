@@ -37,7 +37,9 @@ _reservations = {}
 _upserts = {}
 _next_token = [0]
 
-_counts = {'displays': 0, 'removed': 0, 'reserved': 0, 'added': 0, 'failed': 0}
+_counts = {'displays': 0, 'removed': 0, 'reserved': 0, 'added': 0,
+           'failed': 0, 'dynamic_failed': 0}
+_shapes = {}
 _installed = []
 
 
@@ -164,62 +166,88 @@ def withdraw(handle):
 # --------------------------------------------------------------------------
 # application
 # --------------------------------------------------------------------------
+def _effective_rows(dialog):
+    """Every row this dialog is about to show, from both sources.
+
+    Rows arrive two ways: a static picker_rows dict, and a
+    dynamic_picker_rows_func the dialog calls at build time. The body selector
+    uses the dynamic one, which is why hooking display() and reading
+    picker_rows saw nothing at all.
+    """
+    rows = []
+    state = getattr(dialog, 'picker_rows_state', None)
+    func = getattr(dialog, 'dynamic_picker_rows_func', None)
+    if func is not None:
+        try:
+            produced = func(state)
+            if produced:
+                rows.extend(produced)
+        except Exception:
+            _counts['dynamic_failed'] += 1
+    static = getattr(dialog, 'picker_rows', None)
+    if isinstance(static, dict):
+        try:
+            rows.extend(static.get(state) or [])
+        except Exception:
+            pass
+    return state, rows
+
+
 def _apply(dialog):
+    """Materialise, mutate, and hand the result back as static rows.
+
+    The dynamic function is consumed here and cleared for the duration of the
+    build so the original does not add everything twice; it is restored
+    immediately afterwards so later rebuilds still work.
+    """
     title = dialog_title(dialog)
-    rows_by_state = getattr(dialog, 'picker_rows', None)
-    if not isinstance(rows_by_state, dict):
-        return
+    state, rows = _effective_rows(dialog)
 
-    base = getattr(dialog, '_wickedbridge_base', None)
-    if base is None:
-        base = dict((state, list(rows)) for state, rows in rows_by_state.items())
-        dialog._wickedbridge_base = base
-
-    seen = []
-    for state, rows in base.items():
-        kept = []
-        for position, row in enumerate(rows):
-            seen.append(row_key(row))
-            drop = False
-            for (t, match), _askers in _removals.items():
-                if not _title_matches(t, title) or not _matches(match, row, position):
-                    continue
-                reserved = any(_title_matches(rt, title)
-                               and _matches(rm, row, position)
-                               for (rt, rm) in _reservations)
-                if reserved:
-                    _counts['reserved'] += 1
-                else:
-                    drop = True
-                break
-            if drop:
-                _counts['removed'] += 1
-                continue
-            kept.append(row)
-
-        additions = [(k, spec) for k, spec in _upserts.items()
-                     if _title_matches(k[0], title)]
-        additions.sort(key=lambda item: (item[1]['order'] is None,
-                                         item[1]['order'], item[1]['owner'],
-                                         str(item[0][1])))
-        for _key, spec in additions:
-            try:
-                row = spec['factory'](dialog, state)
-            except Exception:
-                _counts['failed'] += 1
-                continue
-            if row is not None:
-                kept.append(row)
-                _counts['added'] += 1
-        rows_by_state[state] = kept
-
-    # Writing the report the first time a dialog is seen removes a step that
-    # is genuinely awkward in game: opening the cheat console dismisses the
-    # dialog, so a player cannot look at one and ask about it at the same
-    # time. Observation persists past the close, but only if something wrote
-    # it down.
+    seen = [row_key(r) for r in rows]
     fresh = title not in _observed
     _observed[title] = seen
+    if not rows:
+        # Record the shape, so an unexpected dialog is diagnosable rather than
+        # silently skipped -- the failure that cost a round trip here.
+        _shapes[title] = sorted(a for a in dir(dialog)
+                                if not a.startswith('__'))[:24]
+
+    kept = []
+    for position, row in enumerate(rows):
+        drop = False
+        for (t, match), _askers in _removals.items():
+            if not _title_matches(t, title) or not _matches(match, row, position):
+                continue
+            reserved = any(_title_matches(rt, title) and _matches(rm, row, position)
+                           for (rt, rm) in _reservations)
+            if reserved:
+                _counts['reserved'] += 1
+            else:
+                drop = True
+            break
+        if drop:
+            _counts['removed'] += 1
+            continue
+        kept.append(row)
+
+    additions = [(k, spec) for k, spec in _upserts.items()
+                 if _title_matches(k[0], title)]
+    additions.sort(key=lambda item: (item[1]['order'] is None,
+                                     item[1]['order'], item[1]['owner'],
+                                     str(item[0][1])))
+    for _key, spec in additions:
+        try:
+            row = spec['factory'](dialog, state)
+        except Exception:
+            _counts['failed'] += 1
+            continue
+        if row is not None:
+            kept.append(row)
+            _counts['added'] += 1
+
+    static = getattr(dialog, 'picker_rows', None)
+    if isinstance(static, dict):
+        static[state] = kept
     if fresh:
         try:
             from . import bootstrap
@@ -235,22 +263,34 @@ def install():
     cls = compat.get('TurboObjectPickerDialog')
     if cls is None:
         return []
-    original = getattr(cls, 'display', None)
+    # _build_dialog_picker_rows, not display: it is where BOTH row sources are
+    # combined, and the last point before rows are pushed into EA's dialog.
+    # display() runs earlier, before the dynamic rows exist.
+    original = getattr(cls, '_build_dialog_picker_rows', None)
     if original is None or getattr(original, '_wickedbridge_dlg', False):
         return []
 
-    def _display(self, *args, **kwargs):
+    def _build(self, *args, **kwargs):
+        restore = getattr(self, 'dynamic_picker_rows_func', None)
         try:
             _counts['displays'] += 1
             _apply(self)
+            # Cleared so the original does not add the dynamic rows a second
+            # time on top of the list we just wrote.
+            self.dynamic_picker_rows_func = None
         except Exception:
-            # Never stop a dialog opening because a declaration misbehaved.
             pass
-        return original(self, *args, **kwargs)
+        try:
+            return original(self, *args, **kwargs)
+        finally:
+            try:
+                self.dynamic_picker_rows_func = restore
+            except Exception:
+                pass
 
-    _display._wickedbridge_dlg = True
+    _build._wickedbridge_dlg = True
     try:
-        cls.display = _display
+        cls._build_dialog_picker_rows = _build
     except Exception:
         return []
     _installed.append('dialogs')
@@ -319,4 +359,9 @@ def report_lines():
             lines.append('   ' + line)
     else:
         lines.append('   no picker dialogs seen yet -- open one and look again')
+    for title, attrs in _shapes.items():
+        lines.append('   dialog %r produced NO rows -- attributes: %s'
+                     % (title, ', '.join(attrs)))
+    if _counts['dynamic_failed']:
+        lines.append('   %d dynamic row functions raised' % _counts['dynamic_failed'])
     return lines

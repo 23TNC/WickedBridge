@@ -332,17 +332,28 @@ class FakeRow(object):
 
 
 class FakePickerDialog(object):
-    def __init__(self, title):
+    """Shaped like the real one: rows come from a static dict AND a dynamic
+    function, combined by _build_dialog_picker_rows."""
+
+    def __init__(self, title, dynamic=None):
         self.title = title
         self.picker_rows = {}
+        self.picker_rows_state = 0
+        self.dynamic_picker_rows_func = dynamic
 
     def add_picker_row(self, state, *rows):
         self.picker_rows.setdefault(state, []).extend(rows)
 
+    def _build_dialog_picker_rows(self, state=None):
+        rows = []
+        if self.dynamic_picker_rows_func is not None:
+            rows.extend(self.dynamic_picker_rows_func(self.picker_rows_state) or [])
+        rows.extend(self.picker_rows.get(self.picker_rows_state) or [])
+        DISPLAYED.append([r.get_identifier() for r in rows])
+        return rows
+
     def display(self, client_sim=None):
-        DISPLAYED.append([r.get_identifier()
-                          for r in self.picker_rows.get(0, [])])
-        return 'shown'
+        return self._build_dialog_picker_rows(self.picker_rows_state)
 
 
 class FakePickerCategory(object):
@@ -379,7 +390,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.18.3')
+check('module imports', wickedbridge.VERSION == '0.19.0')
 # The harness used to overwrite the player's live status file, because
 # _candidate_paths tried a hardcoded user folder ahead of expanduser -- so no
 # redirect could get in front of it. A test run once replaced a real dialog
@@ -844,10 +855,11 @@ check('dialog hook installed', dlg._installed == ['dialogs'], str(dlg._installed
 
 
 def _body_dialog():
-    d = FakePickerDialog(0x4242)
-    d.add_picker_row(0, FakeRow('penis_soft'), FakeRow('penis_hard'),
-                     FakeRow('body_top'), FakeRow('feet'))
-    return d
+    # The real body selector supplies rows dynamically -- which is exactly what
+    # made hooking display() and reading picker_rows see nothing at all.
+    return FakePickerDialog(0x4242, dynamic=lambda state: [
+        FakeRow('penis_soft'), FakeRow('penis_hard'),
+        FakeRow('body_top'), FakeRow('feet')])
 
 
 del DISPLAYED[:]
@@ -890,6 +902,9 @@ other.add_picker_row(0, FakeRow('feet'))
 other.display()
 check('a dialog nobody declared against is untouched',
       DISPLAYED[-1] == ['feet'])
+_body_dialog().display()
+check('dynamic rows are not added twice',
+      DISPLAYED[-1].count('penis_soft') == 1, str(DISPLAYED[-1]))
 
 hany = dlg.remove(wickedbridge.DIALOG_ANY, 'feet')
 other = FakePickerDialog(0x9999)
@@ -897,6 +912,10 @@ other.add_picker_row(0, FakeRow('feet'))
 other.display()
 check('DIALOG_ANY reaches a dialog whose title we never knew',
       DISPLAYED[-1] == [])
+empty = FakePickerDialog(0xE770)
+empty.display()
+check('a dialog yielding no rows records its shape rather than vanishing',
+      0xE770 in dlg._shapes, str(list(dlg._shapes)))
 dlg.withdraw(hany)
 
 # The console dismisses the dialog, so the file has to write itself.
