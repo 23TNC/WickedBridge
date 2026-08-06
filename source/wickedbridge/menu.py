@@ -47,6 +47,9 @@ from . import compat, events
 # windows open, because the ids cannot be known ahead of time -- discovery is a
 # runtime activity, and `observed()` is how a mod author finds what to address.
 _observed = {}
+# window_id -> the untouched element objects, so a test can duplicate a real
+# element rather than construct one and risk failing for the wrong reason.
+_bases = {}
 
 # (window_id, match) -> [(token, owner, reason)]. A list, because several mods
 # may declare the same thing and withdrawing one must not drop the others.
@@ -189,6 +192,7 @@ def _apply(window):
         window._wickedbridge_base = base
 
     _observed[window_id] = [element_key(e) for e in base]
+    _bases[window_id] = base
 
     kept = []
     for element in base:
@@ -273,6 +277,11 @@ def classes():
              'SettingsInputElement')
     return dict((name, compat.get(name)) for name in names
                 if compat.get(name) is not None)
+
+
+def base_elements(window_id):
+    """The untouched elements of a window we have seen open."""
+    return list(_bases.get(window_id, ()))
 
 
 def observed():

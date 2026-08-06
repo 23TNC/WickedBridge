@@ -11,7 +11,7 @@ import sys
 
 from . import compat, events, gates, menu, roles, satisfaction, settings, sex
 
-VERSION = '0.10.0'
+VERSION = '0.11.0'
 STATUS_FILE = 'WickedBridge_status.txt'
 
 _state = {'imported': True, 'zone_load': 'not yet', 'install': 'not attempted'}
@@ -170,6 +170,44 @@ def start():
 # --------------------------------------------------------------------------
 # wickedbridge.status -- refresh and print the report on demand
 # --------------------------------------------------------------------------
+# --------------------------------------------------------------------------
+# menu test cheats
+#
+# Addressing by "window.element" index rather than by raw id, because window
+# ids and element keys are whatever WickedWhims made them -- ints, enum
+# members, localised-string hashes -- and a cheat cannot type them safely.
+# Run wickedbridge.menu.list first; the numbers it prints are the handles.
+# --------------------------------------------------------------------------
+_menu_index = {}
+_menu_handles = []
+
+
+def _menu_list(output):
+    from . import menu
+    _menu_index.clear()
+    seen = menu.observed()
+    if not seen:
+        output('no settings windows seen yet -- open WickedWhims settings and '
+               'walk into the screens you care about, then run this again')
+        return
+    for w, window_id in enumerate(sorted(seen, key=lambda k: str(k))):
+        output('[%d] window %r' % (w, window_id))
+        for e, key in enumerate(seen[window_id]):
+            _menu_index['%d.%d' % (w, e)] = (window_id, key, e)
+            output('     [%d.%d] %r' % (w, e, key))
+    output('%d windows. Use e.g. wickedbridge.menu.remove 0.1' % len(seen))
+
+
+def _menu_target(output, ref):
+    if not _menu_index:
+        output('run wickedbridge.menu.list first')
+        return None
+    target = _menu_index.get(ref)
+    if target is None:
+        output('no such entry %r -- run wickedbridge.menu.list' % ref)
+    return target
+
+
 try:
     import sims4.commands
 
@@ -180,5 +218,64 @@ try:
         for line in report():
             output(line)
         output('written to: %s' % (write_report() or 'FAILED'))
+    @sims4.commands.Command('wickedbridge.menu.list',
+                            command_type=sims4.commands.CommandType.Live)
+    def _wb_menu_list(_connection=None):
+        _menu_list(sims4.commands.CheatOutput(_connection))
+
+    @sims4.commands.Command('wickedbridge.menu.remove',
+                            command_type=sims4.commands.CommandType.Live)
+    def _wb_menu_remove(ref: str = '', _connection=None):
+        from . import menu
+        output = sims4.commands.CheatOutput(_connection)
+        target = _menu_target(output, ref)
+        if target is None:
+            return
+        window_id, key, _i = target
+        _menu_handles.append(menu.remove(window_id, key, reason='cheat'))
+        output('declared remove of %r in %r -- reopen the window' % (key, window_id))
+
+    @sims4.commands.Command('wickedbridge.menu.reserve',
+                            command_type=sims4.commands.CommandType.Live)
+    def _wb_menu_reserve(ref: str = '', _connection=None):
+        from . import menu
+        output = sims4.commands.CheatOutput(_connection)
+        target = _menu_target(output, ref)
+        if target is None:
+            return
+        window_id, key, _i = target
+        _menu_handles.append(menu.reserve(window_id, key, reason='cheat'))
+        output('declared reserve of %r -- reserve outranks remove' % (key,))
+
+    @sims4.commands.Command('wickedbridge.menu.dupe',
+                            command_type=sims4.commands.CommandType.Live)
+    def _wb_menu_dupe(ref: str = '', _connection=None):
+        from . import menu
+        output = sims4.commands.CheatOutput(_connection)
+        target = _menu_target(output, ref)
+        if target is None:
+            return
+        window_id, key, index = target
+        elements = menu.base_elements(window_id)
+        if index >= len(elements):
+            output('that window has changed since the listing')
+            return
+        element = elements[index]
+        _menu_handles.append(
+            menu.upsert(window_id, lambda element=element: element,
+                        key='cheat_dupe_%s' % (ref,), reason='cheat'))
+        output('declared upsert of a copy of %r -- it should appear twice, and '
+               'BOTH copies must do the same thing when clicked' % (key,))
+
+    @sims4.commands.Command('wickedbridge.menu.clear',
+                            command_type=sims4.commands.CommandType.Live)
+    def _wb_menu_clear(_connection=None):
+        from . import menu
+        output = sims4.commands.CheatOutput(_connection)
+        dropped = sum(1 for h in _menu_handles if menu.withdraw(h))
+        del _menu_handles[:]
+        output('withdrew %d declaration(s) -- reopen the window to confirm it '
+               'is back to stock' % dropped)
+
 except Exception as ex:
     _wwlog('could not register status command: %r' % (ex,))
