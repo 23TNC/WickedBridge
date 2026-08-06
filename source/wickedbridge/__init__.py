@@ -26,8 +26,8 @@ and again at zone load, because a script mod that fails to load is otherwise
 completely silent.
 """
 
-from . import (bootstrap, compat, events, gates, menu, roles, satisfaction,
-               satisfaction_model, settings, sex)
+from . import (animations, bootstrap, compat, events, gates, menu, roles,
+               satisfaction, satisfaction_model, settings, sex)
 
 VERSION = bootstrap.VERSION
 
@@ -95,7 +95,19 @@ opposite_role = roles.opposite
 satisfaction_keys = satisfaction_model.keys
 register_satisfaction_key = satisfaction_model.register_key
 
-GATES = tuple(g[0] for g in gates.GATES) + (satisfaction.EV_ALLOWED,)
+GATES = (tuple(g[0] for g in gates.GATES)
+         + (satisfaction.EV_ALLOWED, animations.EV_ALLOWED))
+
+# Judge a whole animation, with the Sims it would be used for.
+#
+#     def no_kissing(animation, sims, info):
+#         return False if 'Kissing' in (info['name'] or '') else None
+#     wickedbridge.gate('animation.allowed', no_kissing)
+#
+# `info` is plain data -- id, name, author, category, tags, actor_count,
+# gender_signature -- so a subscriber names no WickedWhims internal. Veto
+# only: there is no way to add an animation WickedWhims did not offer.
+describe_animation = animations.describe
 
 # --- WickedWhims' settings menus ------------------------------------------
 # Set arithmetic, so the result does not depend on script load order:

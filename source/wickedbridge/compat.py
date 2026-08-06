@@ -27,6 +27,7 @@ M_LOGGER = 'wickedwhims.debug.logger'
 M_SIMS = 'wickedwhims.sex.generic.utils.sims'
 M_GENDER = 'wickedwhims.sex.enums.sex_gender'
 M_SETTINGS_UI = 'wickedwhims.main.settings.settings_builder'
+M_ANIMS = 'wickedwhims.sex.animations.animations_operator'
 M_CONDOMS = 'wickedwhims.sex.pregnancy.birth_control.condoms'
 M_PILLS = 'wickedwhims.sex.pregnancy.birth_control.pills'
 M_SATIS = ('wickedwhims.sex.integral.sex_handlers.active_sex.sex_actions'
@@ -75,6 +76,11 @@ REQUIRED = (
     ('SettingsCustomCallbackElement', M_SETTINGS_UI,
      'SettingsCustomCallbackElement', False),
     ('SettingsInputElement',     M_SETTINGS_UI, 'SettingsInputElement',     False),
+    # The one funnel every animation query passes through. Twelve call sites
+    # use it -- start/change/join pickers, playlists, autonomy, the loader --
+    # and it takes the Sims and returns the animations, which is why it is the
+    # right place to judge eligibility rather than the gender channel.
+    ('get_available_animations',  M_ANIMS,   'get_available_animations',  False),
     ('is_condom_applicable_for_sim', M_CONDOMS, 'is_condom_applicable_for_sim', False),
     ('is_birth_control_pill_applicable_for_sim', M_PILLS,
      'is_birth_control_pill_applicable_for_sim', False),

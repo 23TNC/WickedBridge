@@ -236,6 +236,59 @@ settings_ui_mod.SettingsSelectElement = FakeElement
 settings_ui_mod.SettingsCustomCallbackElement = FakeElement
 settings_ui_mod.SettingsInputElement = FakeElement
 
+# The one funnel every animation query passes through.
+class FakeAnimation(object):
+    def __init__(self, ident, name, category, author='someone', actors=2):
+        self._id = ident
+        self._name = name
+        self._category = category
+        self._author = author
+        self._actors = ['a'] * actors
+
+    def get_animation_id(self):
+        return self._id
+
+    def get_identifier(self):
+        return self._id
+
+    def get_original_string_display_name(self):
+        return self._name
+
+    def get_author(self):
+        return self._author
+
+    def get_sex_category(self):
+        return self._category
+
+    def get_actors(self):
+        return list(self._actors)
+
+    def get_tags(self):
+        return ('tag_%s' % self._category,)
+
+
+ANIMS = [FakeAnimation(1, 'Vaginal Standing', 'VAGINAL'),
+         FakeAnimation(2, 'Anal Standing', 'ANAL'),
+         FakeAnimation(3, 'Handjob Sitting', 'HANDJOB'),
+         FakeAnimation(4, 'Group Thing', 'VAGINAL', actors=3)]
+ANIM_QUERIES = []
+
+anims_mod = make_module('wickedwhims.sex.animations.animations_operator')
+
+
+def get_available_animations(object_identifier=None, location_constraints=None,
+                             sims_list=None, additional_tags=None,
+                             additional_no_tags=None, auto_tags=None,
+                             ignore_animations=None, filter_fn=None):
+    ANIM_QUERIES.append(sims_list)
+    return tuple(ANIMS)
+
+
+anims_mod.get_available_animations = get_available_animations
+# a module that grabbed it by `from ... import` before we installed
+anim_importer = make_module('wickedwhims.fake_anim_caller')
+anim_importer.get_available_animations = anims_mod.get_available_animations
+
 zone_mod = make_module('turbolib2.events.zone_spin')
 
 
@@ -260,7 +313,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.14.0')
+check('module imports', wickedbridge.VERSION == '0.15.0')
 check('used turbolib2 zone registration, not the fallback',
       len(ZONE_CALLBACKS) == 1, 'fell back to zone.Zone')
 
@@ -703,6 +756,90 @@ check('without_male_role maps one gender, without a constant',
 check('the helpers need no SexGenderType constant from the caller',
       wickedbridge.is_male_role(MALE) and not wickedbridge.is_male_role(FEMALE)
       and wickedbridge.opposite_role(MALE) == FEMALE)
+
+print('--- animation gating ---')
+from wickedbridge import animations as anims
+check('animation gate installed', anims._installed == [anims.EV_ALLOWED],
+      str(anims._installed))
+check('wrapper reached the importing module too',
+      anim_importer.get_available_animations is anims_mod.get_available_animations)
+
+del ANIM_QUERIES[:]
+result = anims_mod.get_available_animations(sims_list=['sim_a', 'sim_b'])
+check('with no subscribers every animation passes through', len(result) == 4)
+check("WickedWhims' own query still ran", ANIM_QUERIES == [['sim_a', 'sim_b']])
+
+info_seen = []
+
+
+def no_anal(animation, sims, info):
+    info_seen.append(info)
+    return False if info['category'] == 'ANAL' else None
+
+
+wickedbridge.gate('animation.allowed', no_anal)
+result = anims_mod.get_available_animations(sims_list=['sim_a'])
+check('a subscriber can veto by its own criteria',
+      [a.get_animation_id() for a in result] == [1, 3, 4],
+      str([a.get_animation_id() for a in result]))
+check('the subscriber is handed the Sims the query was for',
+      ANIM_QUERIES[-1] == ['sim_a'])
+check('info is plain data, so a consumer names no WickedWhims internal',
+      info_seen and set(info_seen[0]) >= {'id', 'name', 'author', 'category',
+                                          'tags', 'actor_count',
+                                          'gender_signature'},
+      str(sorted(info_seen[0]) if info_seen else None))
+check('actor_count is derived from the animation, not guessed',
+      [i['actor_count'] for i in info_seen if i['id'] == 4] == [3])
+
+# sims_list is the third positional; callers may pass it either way.
+result = anims_mod.get_available_animations(None, None, ['positional_sim'])
+check('sims are found whether passed positionally or by keyword',
+      ANIM_QUERIES[-1] == ['positional_sim'] and len(result) == 3)
+
+
+def picky(animation, sims, info):
+    return False if info['actor_count'] > 2 else None
+
+
+wickedbridge.gate('animation.allowed', picky)
+result = anims_mod.get_available_animations(sims_list=['s'])
+check('two mods veto independently -- the union is removed',
+      [a.get_animation_id() for a in result] == [1, 3],
+      str([a.get_animation_id() for a in result]))
+
+
+def broken(animation, sims, info):
+    raise RuntimeError('subscriber bug')
+
+
+wickedbridge.gate('animation.allowed', broken)
+result = anims_mod.get_available_animations(sims_list=['s'])
+check('a throwing subscriber does not lose the animation or the query',
+      [a.get_animation_id() for a in result] == [1, 3])
+
+before_empty = anims.counts()['emptied']
+
+
+def veto_all(animation, sims, info):
+    return False
+
+
+wickedbridge.gate('animation.allowed', veto_all)
+result = anims_mod.get_available_animations(sims_list=['s'])
+check('vetoing everything is allowed but counted -- it reads as WW being broken',
+      result == () and anims.counts()['emptied'] == before_empty + 1)
+wickedbridge.unsubscribe('animation.allowed', veto_all)
+check('unsubscribing restores what the other gates still allow',
+      [a.get_animation_id() for a in
+       anims_mod.get_available_animations(sims_list=['s'])] == [1, 3])
+
+check('animation.allowed is advertised as a gate',
+      anims.EV_ALLOWED in wickedbridge.GATES)
+check('describe_animation is on the public surface',
+      wickedbridge.describe_animation(ANIMS[0])['name'] == 'Vaginal Standing')
+check('describe survives an animation missing a method',
+      wickedbridge.describe_animation(object())['id'] is None)
 
 print('--- settings menu ---')
 from wickedbridge import menu

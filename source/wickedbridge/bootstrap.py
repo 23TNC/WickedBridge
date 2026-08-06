@@ -9,9 +9,10 @@ save fails to load.
 
 import sys
 
-from . import compat, events, gates, menu, roles, satisfaction, settings, sex
+from . import (animations, compat, events, gates, menu, roles, satisfaction,
+               settings, sex)
 
-VERSION = '0.14.0'
+VERSION = '0.15.0'
 STATUS_FILE = 'WickedBridge_status.txt'
 
 _state = {'imported': True, 'zone_load': 'not yet', 'install': 'not attempted'}
@@ -53,6 +54,8 @@ def report():
     lines += events.report_lines()
     lines.append('')
     lines += gates.report_lines()
+    lines.append('')
+    lines += animations.report_lines()
     lines.append('')
     lines += roles.report_lines()
     lines.append('')
@@ -109,6 +112,7 @@ def install():
     sex.install_after_stop()
     satisfaction.install()
     roles.install()
+    animations.install()
     menu.install()
     if ok and lifecycle:
         _state['install'] = 'ok'
