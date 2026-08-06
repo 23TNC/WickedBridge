@@ -11,7 +11,7 @@ import sys
 
 from . import compat, events, gates, menu, roles, satisfaction, settings, sex
 
-VERSION = '0.11.0'
+VERSION = '0.12.0'
 STATUS_FILE = 'WickedBridge_status.txt'
 
 _state = {'imported': True, 'zone_load': 'not yet', 'install': 'not attempted'}
@@ -184,18 +184,20 @@ _menu_handles = []
 
 def _menu_list(output):
     from . import menu
+    lines, index = menu.listing()
     _menu_index.clear()
-    seen = menu.observed()
-    if not seen:
+    _menu_index.update(index)
+    if not lines:
         output('no settings windows seen yet -- open WickedWhims settings and '
                'walk into the screens you care about, then run this again')
         return
-    for w, window_id in enumerate(sorted(seen, key=lambda k: str(k))):
-        output('[%d] window %r' % (w, window_id))
-        for e, key in enumerate(seen[window_id]):
-            _menu_index['%d.%d' % (w, e)] = (window_id, key, e)
-            output('     [%d.%d] %r' % (w, e, key))
-    output('%d windows. Use e.g. wickedbridge.menu.remove 0.1' % len(seen))
+    for line in lines:
+        output(line)
+    output('%d windows. Use e.g. wickedbridge.menu.remove 0.1'
+           % len(menu.observed()))
+    # The console cannot be copied from, so the same listing is written to the
+    # status file every time.
+    output('also written to: %s' % (write_report() or 'FAILED'))
 
 
 def _menu_target(output, ref):
@@ -233,6 +235,9 @@ try:
             return
         window_id, key, _i = target
         _menu_handles.append(menu.remove(window_id, key, reason='cheat'))
+        write_report()
+        write_report()
+        write_report()
         output('declared remove of %r in %r -- reopen the window' % (key, window_id))
 
     @sims4.commands.Command('wickedbridge.menu.reserve',
@@ -274,6 +279,7 @@ try:
         output = sims4.commands.CheatOutput(_connection)
         dropped = sum(1 for h in _menu_handles if menu.withdraw(h))
         del _menu_handles[:]
+        write_report()
         output('withdrew %d declaration(s) -- reopen the window to confirm it '
                'is back to stock' % dropped)
 

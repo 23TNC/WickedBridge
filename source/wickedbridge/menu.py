@@ -284,6 +284,23 @@ def base_elements(window_id):
     return list(_bases.get(window_id, ()))
 
 
+def listing():
+    """The observed tree, numbered the way the cheats address it.
+
+    Returns (lines, index). Both the console cheat and the status file render
+    from this one function, so the numbers a player reads in the file are the
+    numbers the cheats accept -- computing them twice would let them drift.
+    """
+    lines = []
+    index = {}
+    for w, window_id in enumerate(sorted(_observed, key=lambda k: str(k))):
+        lines.append('[%d] window %r' % (w, window_id))
+        for e, key in enumerate(_observed[window_id]):
+            index['%d.%d' % (w, e)] = (window_id, key, e)
+            lines.append('       [%d.%d] %r' % (w, e, key))
+    return lines, index
+
+
 def observed():
     """Every window seen so far, and the element keys it shipped with.
 
@@ -322,7 +339,17 @@ def report_lines():
                      % (entry['kind'], str(entry['window'])[:22],
                         str(entry['match'])[:18],
                         ', '.join(entry['owners']), entry['outcome']))
-    if _observed and not mutations():
-        lines.append('   %d windows observed, no mutations declared'
+    # The observed tree goes in the file too. The console cannot be copied
+    # from, and these ids are the whole point of walking the menus -- they are
+    # what a consuming mod needs in order to address anything.
+    if _observed:
+        lines.append('')
+        lines.append('   settings windows seen (%d) -- the numbers are what the'
                      % len(_observed))
+        lines.append('   wickedbridge.menu.* cheats accept:')
+        for line in listing()[0]:
+            lines.append('   ' + line)
+    else:
+        lines.append('   no settings windows seen yet -- open WickedWhims '
+                     'settings and walk into the screens you care about')
     return lines

@@ -240,7 +240,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.11.0')
+check('module imports', wickedbridge.VERSION == '0.12.0')
 check('used turbolib2 zone registration, not the fallback',
       len(ZONE_CALLBACKS) == 1, 'fell back to zone.Zone')
 
@@ -775,6 +775,16 @@ check('menu verbs are on the public surface',
            'menu_observed', 'menu_mutations', 'menu_classes')))
 check('classes() exposes WickedWhims constructors so mods need not import them',
       'SettingsWindow' in wickedbridge.menu_classes())
+
+# The console cannot be copied from, so the ids have to reach the status file.
+lines, index = menu.listing()
+report = chr(10).join(menu.report_lines())
+check('the observed tree is numbered for the cheats',
+      '[0.0]' in chr(10).join(lines) and '0.0' in index, str(lines[:3]))
+check('the same listing reaches the status report, so it can be read from disk',
+      all(line in report for line in lines), report)
+check('window ids are rendered with repr, so their type is visible',
+      "'gender_recognition'" in report, report)
 
 print()
 print('%d passed, %d failed' % (len(PASS), len(FAIL)))
