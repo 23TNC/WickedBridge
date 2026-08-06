@@ -86,6 +86,7 @@ def scale(event, callback, priority=0):
 # Role helpers, so a subscriber to sex.sim_genders never needs a SexGenderType
 # constant of its own.
 without_male_roles = roles.without_male_roles
+without_male_role = roles.without_male_role
 is_male_role = roles.is_male
 is_female_role = roles.is_female
 opposite_role = roles.opposite
@@ -118,6 +119,7 @@ EVENTS = (
 # Resolvers -- return a replacement, or None to abstain. The last argument is
 # always WickedWhims' own value, so a subscriber can scale rather than replace.
 RESOLVERS = (
+    roles.EV_SIM_GENDER,         # (turbo_sim, *args, ww_gender)  -> gender
     roles.EV_SIM_GENDERS,        # (turbo_sim, *args, ww_genders) -> tuple
     satisfaction.EV_LEVEL,       # (sim, instance, target, ww_level)
     satisfaction.EV_PAIR_LEVEL,  # (sim, target, instance, ww_level)

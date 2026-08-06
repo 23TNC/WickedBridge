@@ -32,9 +32,11 @@ broken Sim rather than a restricted one, so it is refused.
 from . import compat, events
 
 EV_SIM_GENDERS = 'sex.sim_genders'   # (turbo_sim, *args, ww_genders) -> tuple
+EV_SIM_GENDER = 'sex.sim_gender'     # (turbo_sim, *args, ww_gender)  -> gender
 
 _installed = []
-_counts = {'calls': 0, 'narrowed': 0, 'refused_empty': 0, 'no_female_role': 0}
+_counts = {'calls': 0, 'narrowed': 0, 'refused_empty': 0,
+           'no_female_role': 0, 'native_calls': 0, 'native_narrowed': 0}
 _last = [None]
 
 
@@ -88,6 +90,11 @@ def opposite(gender):
     return fn(gender) if fn is not None else gender
 
 
+def without_male_role(gender):
+    """One gender, mapped off a penis-requiring role. Constant-free."""
+    return opposite(gender) if is_male(gender) else gender
+
+
 def without_male_roles(genders):
     """The same Sim, admitted only to roles that do not require a penis.
 
@@ -120,25 +127,62 @@ def without_male_roles(genders):
     return genders
 
 
-def install():
-    """Wrap get_sim_sex_genders. Idempotent."""
-    if _installed:
-        return list(_installed)
-    original = compat.get('get_sim_sex_genders')
-    if original is None or getattr(original, '_wickedbridge_roles', False):
-        return []
-
-    def _wrapped(*args, **kwargs):
-        result = original(*args, **kwargs)
+def _resolve_single(args, original):
+    """First definite answer wins, then chains, same shape as _resolve."""
+    subs = events.raw_subscribers(EV_SIM_GENDER)
+    if not subs:
+        return original
+    value = original
+    for sub in subs:
+        if sub.muted:
+            continue
         try:
-            _counts['calls'] += 1
-            return _resolve(args, result)
+            answer = sub.callback(*(tuple(args) + (value,)))
         except Exception:
-            return result
+            events.record_error(sub)
+            continue
+        if answer is not None:
+            value = answer
+    if value != original:
+        _counts['native_narrowed'] += 1
+        _last[0] = '%s -> %s (native)' % (original, value)
+    return value
 
-    _wrapped._wickedbridge_roles = True
-    if compat.rebind('get_sim_sex_genders', _wrapped):
-        _installed.append(EV_SIM_GENDERS)
+
+def install():
+    """Wrap both gender functions. Idempotent.
+
+    Both are needed and they are not redundant. get_sim_sex_genders feeds the
+    picker and the start test; get_sim_native_sex_gender feeds those AND the
+    (gender, allow_any) pairs set_animation_instance matches against animation
+    slots. Wrapping only the first filtered which animations were offered while
+    leaving actor-to-slot assignment on the unnarrowed value -- a caged Sim
+    still took the male role in an animation that had been allowed through.
+    """
+    for key, event, resolver in (
+            ('get_sim_native_sex_gender', EV_SIM_GENDER, _resolve_single),
+            ('get_sim_sex_genders', EV_SIM_GENDERS, _resolve)):
+        if event in _installed:
+            continue
+        original = compat.get(key)
+        if original is None or getattr(original, '_wickedbridge_roles', False):
+            continue
+
+        def _make(original=original, resolver=resolver, event=event):
+            counter = 'native_calls' if event == EV_SIM_GENDER else 'calls'
+
+            def _wrapped(*args, **kwargs):
+                result = original(*args, **kwargs)
+                try:
+                    _counts[counter] += 1
+                    return resolver(args, result)
+                except Exception:
+                    return result
+            _wrapped._wickedbridge_roles = True
+            return _wrapped
+
+        if compat.rebind(key, _make()):
+            _installed.append(event)
     return list(_installed)
 
 
@@ -147,9 +191,14 @@ def counts():
 
 
 def report_lines():
-    lines = ['role resolution: %s' % ('on' if _installed else 'OFF'),
-             '   %-24s calls=%d narrowed=%d'
+    lines = ['role resolution: %d/2 hooks' % len(_installed),
+             '   %-24s calls=%d narrowed=%d   (slot assignment)'
+             % (EV_SIM_GENDER, _counts['native_calls'], _counts['native_narrowed']),
+             '   %-24s calls=%d narrowed=%d   (picker and start test)'
              % (EV_SIM_GENDERS, _counts['calls'], _counts['narrowed'])]
+    if EV_SIM_GENDER not in _installed:
+        lines.append('   WARNING sex.sim_gender is OFF -- narrowing will filter '
+                     'the picker but not which Sim takes which slot')
     if _last[0]:
         lines.append('   last narrowing: %s' % _last[0])
     if _counts['no_female_role']:

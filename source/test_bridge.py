@@ -160,6 +160,10 @@ gender_mod = make_module('wickedwhims.sex.enums.sex_gender')
 gender_mod.get_sim_sex_genders = lambda sim, ignore=False, both=None: (MALE,)
 # BOTH fits either slot, so it counts as male-fitting -- that is what makes it
 # the interesting case for without_male_roles.
+# The root: get_sim_sex_genders calls this, and so does set_animation_instance
+# when it decides which Sim takes which animation slot.
+gender_mod.get_sim_native_sex_gender = lambda sim, ignore=False: (
+    FEMALE if sim in ('caged', 'free_female') else MALE)
 gender_mod.is_male_sex_gender = lambda g: g in (MALE, BOTH)
 gender_mod.is_female_sex_gender = lambda g: g in (FEMALE, BOTH)
 gender_mod.get_opposite_sex_gender_variant = lambda g: {MALE: FEMALE, FEMALE: MALE}.get(g, g)
@@ -191,7 +195,7 @@ print('--- import and registration ---')
 import wickedbridge
 from wickedbridge import bootstrap, events, sex
 
-check('module imports', wickedbridge.VERSION == '0.8.0')
+check('module imports', wickedbridge.VERSION == '0.9.0')
 check('used turbolib2 zone registration, not the fallback',
       len(ZONE_CALLBACKS) == 1, 'fell back to zone.Zone')
 
@@ -552,7 +556,9 @@ check('WickedWhims value still returned while observing',
 
 print('--- animation roles ---')
 from wickedbridge import roles
-check('role resolver installed', roles._installed == [roles.EV_SIM_GENDERS],
+check('both role resolvers installed',
+      sorted(roles._installed) == sorted([roles.EV_SIM_GENDER,
+                                          roles.EV_SIM_GENDERS]),
       str(roles._installed))
 check('wrapper reached the importing module too',
       gender_importer.get_sim_sex_genders is gender_mod.get_sim_sex_genders)
@@ -605,6 +611,30 @@ before_nf = roles.counts()['no_female_role']
 check('a Sim with no reachable female role is left alone, not broken',
       wickedbridge.without_male_roles((BOTH,)) == (BOTH,)
       and roles.counts()['no_female_role'] == before_nf + 1)
+# The bug this hook exists for: narrowing only the tuple filtered which
+# animations were offered, while set_animation_instance kept assigning slots
+# from the unnarrowed native gender -- so a caged Sim still took the male role.
+wickedbridge.resolve('sex.sim_gender',
+                     lambda sim, *rest: (wickedbridge.without_male_role(rest[-1])
+                                         if sim == 'locked' else None))
+check('the native gender is narrowed too, which is what picks the slot',
+      gender_mod.get_sim_native_sex_gender('locked') == FEMALE,
+      str(gender_mod.get_sim_native_sex_gender('locked')))
+check('an unaffected Sim keeps their native gender',
+      gender_mod.get_sim_native_sex_gender('someone') == MALE)
+# That the real get_sim_sex_genders composes on top of the narrowed root is a
+# property of WickedWhims' own module-global lookup, read out of its bytecode
+# -- the stub here returns a constant, so asserting it would only be testing
+# the stub. What the harness can honestly check is that the two hooks are
+# installed over different functions and count separately.
+check('the two hooks wrap different functions',
+      gender_mod.get_sim_native_sex_gender is not gender_mod.get_sim_sex_genders)
+check('the native hook is counted separately from the tuple hook',
+      roles.counts()['native_narrowed'] >= 1)
+check('without_male_role maps one gender, without a constant',
+      wickedbridge.without_male_role(MALE) == FEMALE
+      and wickedbridge.without_male_role(FEMALE) == FEMALE)
+
 check('the helpers need no SexGenderType constant from the caller',
       wickedbridge.is_male_role(MALE) and not wickedbridge.is_male_role(FEMALE)
       and wickedbridge.opposite_role(MALE) == FEMALE)

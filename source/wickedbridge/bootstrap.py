@@ -11,7 +11,7 @@ import sys
 
 from . import compat, events, gates, roles, satisfaction, settings, sex
 
-VERSION = '0.8.0'
+VERSION = '0.9.0'
 STATUS_FILE = 'WickedBridge_status.txt'
 
 _state = {'imported': True, 'zone_load': 'not yet', 'install': 'not attempted'}

@@ -52,6 +52,11 @@ REQUIRED = (
     # the tuple of animation roles a Sim may fill -- read by the picker,
     # the start test, set_animation_instance and swap_actors
     ('get_sim_sex_genders',      M_GENDER,   'get_sim_sex_genders',      False),
+    # The ROOT of gender resolution. get_sim_sex_genders calls this, and so
+    # does set_animation_instance when it builds the (gender, allow_any) pairs
+    # that decide which Sim takes which slot -- so narrowing only the tuple
+    # filtered the picker while leaving slot assignment untouched.
+    ('get_sim_native_sex_gender', M_GENDER,  'get_sim_native_sex_gender', False),
     # WickedWhims' own gender predicates. Borrowed rather than reimplemented:
     # the SexGenderType table has occult variants whose numbers are easy to
     # transcribe wrongly, and a wrong constant here silently admits a Sim to a
